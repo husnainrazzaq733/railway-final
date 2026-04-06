@@ -1,0 +1,7 @@
+python-telegram-bot[job-queue]
+flask
+requests
+yfinance
+python-dotenv
+multitasking
+pymongo
