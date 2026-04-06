@@ -51,6 +51,16 @@ def get_price(symbol):
     """
     symbol_clean = symbol.upper().replace("/", "").replace("-", "")
     
+    if symbol_clean in ['GOLD', 'XAUUSD', 'XAU', 'GCF', 'GC=F']:
+        # Try Binance PAXG first as it tracks spot gold closely, is 24/7, and avoids YF rate limits
+        price = get_spot_price('PAXGUSDT')
+        if price is None:
+            price = get_forex_price('XAUUSD=X')
+        if price is None:
+            price = get_forex_price('GC=F')
+        if price is not None:
+            return price, 'forex', 'GOLD'
+            
     # 1. Try Binance (Swap then Spot)
     # Most user input like "BTC" means "BTCUSDT" for price checks
     binance_symbol = symbol_clean

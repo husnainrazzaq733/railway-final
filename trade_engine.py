@@ -77,6 +77,7 @@ def update_trade_target_hit(trade_id, target_level):
             if target_level == 1:
                 t['t1_hit'] = True
             elif target_level == 2:
+                t['t1_hit'] = True
                 t['t2_hit'] = True
             break
     save_trades(trades)
