@@ -22,6 +22,7 @@ from alert_engine import load_alerts, remove_alert, add_alert, get_alerts
 from rsi_api import get_crypto_rsi, scan_market_rsi_both
 import trade_engine
 import auth
+import session_engine
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -92,7 +93,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [
             InlineKeyboardButton("💵 EUR/USD", callback_data='price_EURUSD=X'),
             InlineKeyboardButton("💵 GBP/USD", callback_data='price_GBPUSD=X'),
-            InlineKeyboardButton("⚜️ Gold", callback_data='price_GC=F')
+            InlineKeyboardButton("⚜️ Gold", callback_data='price_XAUUSD=X')
         ]
     ]
     inline_markup = InlineKeyboardMarkup(keyboard)
@@ -127,6 +128,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "🔹 `/tracktrade` - Track RR targets (e.g `/tracktrade BTC 65000 64000`)\n"
             "🔹 `/mytrades` - View tracked trades\n"
             "🔹 `/deletetrade <id>` - Remove tracked trade\n"
+            "🔹 `/session` - Live Forex trading sessions\n"
         )
         if auth.is_owner(update.effective_user.id):
             help_text += (
@@ -337,7 +339,7 @@ async def setforex_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"✅ Forex Alert set by **{user_name}**! I will notify when `{display}` goes **{condition.upper()}** {target_price}.\n\n(Current price is {current_price})\n⏰ Time: {get_current_time_str()}", parse_mode='Markdown')
 
 async def gold_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    symbol = "GC=F"
+    symbol = "XAUUSD=X"
     price = get_forex_price(symbol)
     if price is not None:
         await update.message.reply_text(f"⚜️ Live Price for Gold: {price}")
@@ -355,7 +357,7 @@ async def setgold_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Target price must be a valid number.")
         return
         
-    symbol = "GC=F"
+    symbol = "XAUUSD=X"
     current_price = get_forex_price(symbol)
     
     if current_price is None:
@@ -709,6 +711,47 @@ async def users_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
     await update.message.reply_text(text, parse_mode='Markdown')
 
+async def session_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from session_engine import SESSIONS, get_pkt_now, get_all_active_sessions
+    now = get_pkt_now()
+    active = get_all_active_sessions()
+    
+    text = f"🌍 **GLOBAL FOREX SESSIONS** 🌍\n"
+    text += f"⏰ *Current Time:* {now.strftime('%I:%M %p')} (PKT)\n\n"
+    
+    for name, s in SESSIONS.items():
+        if name in active:
+            status = "✅ OPEN"
+        else:
+            status = "🔴 CLOSED"
+            
+        start_str = f"{s['start']:02d}:00" if s['start'] >= 10 else f"0{s['start']}:00"
+        end_str = f"{s['end']:02d}:00" if s['end'] >= 10 else f"0{s['end']}:00"
+        text += f"{s['emoji']} **{name}**: {status}\n  └ _Hours:_ {start_str} - {end_str} PKT\n\n"
+        
+    await update.message.reply_text(text, parse_mode='Markdown')
+
+async def notify_sessions(context: ContextTypes.DEFAULT_TYPE):
+    from session_engine import check_for_state_changes
+    from auth import get_auth_data
+    
+    msgs = check_for_state_changes()
+    if not msgs:
+         return
+         
+    auth_data = get_auth_data()
+    all_users = set(auth_data['allowed_users'])
+    if auth_data['owner']:
+        all_users.add(auth_data['owner'])
+        
+    combined_msg = "🔔 **SESSION UPDATE** 🔔\n\n" + "\n\n".join(msgs) + "\n\n_Use /session to check all status._"
+    
+    for uid in all_users:
+        try:
+            await context.bot.send_message(chat_id=uid, text=combined_msg, parse_mode='Markdown')
+        except Exception as e:
+            pass
+
 def setup_bot():
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
     if not token:
@@ -738,12 +781,14 @@ def setup_bot():
     application.add_handler(CommandHandler('adduser', adduser_command))
     application.add_handler(CommandHandler('removeuser', removeuser_command))
     application.add_handler(CommandHandler('users', users_command))
+    application.add_handler(CommandHandler('session', session_command))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
     application.add_handler(CallbackQueryHandler(button_handler))
     
     job_queue = application.job_queue
     job_queue.run_repeating(check_alerts, interval=20, first=10)
     job_queue.run_repeating(check_active_trades, interval=20, first=15)
+    job_queue.run_repeating(notify_sessions, interval=60, first=5)
     
     return application
 

@@ -52,12 +52,8 @@ def get_price(symbol):
     symbol_clean = symbol.upper().replace("/", "").replace("-", "")
     
     if symbol_clean in ['GOLD', 'XAUUSD', 'XAU', 'GCF', 'GC=F']:
-        # Try Binance PAXG first as it tracks spot gold closely, is 24/7, and avoids YF rate limits
-        price = get_spot_price('PAXGUSDT')
-        if price is None:
-            price = get_forex_price('XAUUSD=X')
-        if price is None:
-            price = get_forex_price('GC=F')
+        # Fetch actual Spot Gold via YFinance (matches MT5)
+        price = get_forex_price('XAUUSD=X')
         if price is not None:
             return price, 'forex', 'GOLD'
             
