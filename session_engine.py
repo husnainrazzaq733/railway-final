@@ -7,7 +7,7 @@ SESSION_STATE_FILE = "session_state.json"
 # Pakistan Standard Time (UTC+5) Summer Hours for Forex Sessions:
 SESSIONS = {
     "Sydney": {"start": 2, "end": 11, "emoji": "🦘"},
-    "Tokyo": {"start": 4, "end": 13, "emoji": "🗼"},
+    "Asia": {"start": 4, "end": 13, "emoji": "🗼"},
     "London": {"start": 12, "end": 21, "emoji": "🕰️"},
     "New York": {"start": 17, "end": 2, "emoji": "🗽"}  # 17:00 to 02:00 next day
 }

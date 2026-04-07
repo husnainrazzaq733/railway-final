@@ -17,7 +17,7 @@ def get_current_time_str():
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes, TypeHandler, ApplicationHandlerStop
 from keep_alive import keep_alive
-from price_api import get_price, get_spot_price, get_swap_price, get_forex_price
+from price_api import get_price, get_spot_price, get_swap_price, get_forex_price, get_pivot_points
 from alert_engine import load_alerts, remove_alert, add_alert, get_alerts
 from rsi_api import get_crypto_rsi, scan_market_rsi_both
 import trade_engine
@@ -218,7 +218,12 @@ async def spot_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     price = get_spot_price(symbol)
     if price is not None:
         rec = await get_recommendation_text_async(symbol, 'spot')
-        await update.message.reply_text(f"🪙 **Spot Price for {symbol}:** `{price}`{rec}\n\n⏰ {get_current_time_str()}", parse_mode='Markdown')
+        pivots = get_pivot_points(symbol, is_crypto=True, is_swap=False)
+        pivot_txt = ""
+        if pivots:
+            pivot_txt = f"\n\n📐 **Support & Resistance:**\n`  R2 : {pivots['r2']}`\n`  R1 : {pivots['r1']}`\n`  P  : {pivots['p']}`\n`  S1 : {pivots['s1']}`\n`  S2 : {pivots['s2']}`"
+            
+        await update.message.reply_text(f"🪙 **Spot Price for {symbol}:** `{price}`{rec}{pivot_txt}\n\n⏰ {get_current_time_str()}", parse_mode='Markdown')
     else:
         await update.message.reply_text(f"❌ Could not fetch Spot price for {symbol}.")
 
@@ -231,7 +236,12 @@ async def swap_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     price = get_swap_price(symbol)
     if price is not None:
         rec = await get_recommendation_text_async(symbol, 'swap')
-        await update.message.reply_text(f"🪙 **Swap Price for {symbol}:** `{price}`{rec}\n\n⏰ {get_current_time_str()}", parse_mode='Markdown')
+        pivots = get_pivot_points(symbol, is_crypto=True, is_swap=True)
+        pivot_txt = ""
+        if pivots:
+            pivot_txt = f"\n\n📐 **Support & Resistance:**\n`  R2 : {pivots['r2']}`\n`  R1 : {pivots['r1']}`\n`  P  : {pivots['p']}`\n`  S1 : {pivots['s1']}`\n`  S2 : {pivots['s2']}`"
+            
+        await update.message.reply_text(f"🪙 **Swap Price for {symbol}:** `{price}`{rec}{pivot_txt}\n\n⏰ {get_current_time_str()}", parse_mode='Markdown')
     else:
         await update.message.reply_text(f"❌ Could not fetch Swap price for {symbol}.")
 
@@ -342,7 +352,11 @@ async def gold_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     symbol = "XAUUSD=X"
     price = get_forex_price(symbol)
     if price is not None:
-        await update.message.reply_text(f"⚜️ Live Price for Gold: {price}")
+        pivots = get_pivot_points(symbol, is_crypto=False, is_gold=True)
+        pivot_txt = ""
+        if pivots:
+            pivot_txt = f"\n\n📐 **Support & Resistance:**\n`  R2 : {pivots['r2']}`\n`  R1 : {pivots['r1']}`\n`  P  : {pivots['p']}`\n`  S1 : {pivots['s1']}`\n`  S2 : {pivots['s2']}`"
+        await update.message.reply_text(f"⚜️ **Live Price for Gold:** `{price}`{pivot_txt}\n\n⏰ {get_current_time_str()}", parse_mode='Markdown')
     else:
         await update.message.reply_text(f"❌ Could not fetch price for Gold.")
 
@@ -628,11 +642,13 @@ async def check_active_trades(context: ContextTypes.DEFAULT_TYPE):
                 msg += f"🔸 **Pair:** {base_msg_info}\n"
                 msg += f"🔸 **Target Reached:** `{t['t2']}`\n"
                 msg += f"🔸 **Current Price:** `{current_price}`\n"
+                msg += f"🔒 **Stop Loss Moved to T1:** `{t['t1']}`\n"
                 msg += f"━━━━━━━━━━━━━━━━━━\n"
                 msg += f"⏰ {get_current_time_str()}"
 
                 await context.bot.send_message(chat_id=t['chat_id'], text=msg, parse_mode='Markdown')
                 trade_engine.update_trade_target_hit(t['id'], 2)
+                trade_engine.update_trade_sl(t['id'], t['t1'])
                 t['t2_hit'] = True 
                 
             if t1_new_hit and not t['t1_hit']: 
@@ -642,11 +658,13 @@ async def check_active_trades(context: ContextTypes.DEFAULT_TYPE):
                 msg += f"🔸 **Pair:** {base_msg_info}\n"
                 msg += f"🔸 **Target Reached:** `{t['t1']}`\n"
                 msg += f"🔸 **Current Price:** `{current_price}`\n"
+                msg += f"🔒 **Stop Loss Moved to Entry:** `{t['entry_price']}`\n"
                 msg += f"━━━━━━━━━━━━━━━━━━\n"
                 msg += f"⏰ {get_current_time_str()}"
 
                 await context.bot.send_message(chat_id=t['chat_id'], text=msg, parse_mode='Markdown')
                 trade_engine.update_trade_target_hit(t['id'], 1)
+                trade_engine.update_trade_sl(t['id'], t['entry_price'])
         except Exception as e:
             import logging
             logging.error(f"Failed to send trade alert to {t['chat_id']}: {e}")
@@ -752,6 +770,44 @@ async def notify_sessions(context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             pass
 
+async def check_news_alerts(context: ContextTypes.DEFAULT_TYPE):
+    from news_api import check_and_get_news_alerts
+    from auth import get_auth_data
+    
+    alerts = check_and_get_news_alerts()
+    if not alerts:
+         return
+         
+    auth_data = get_auth_data()
+    all_users = set(auth_data['allowed_users'])
+    if auth_data['owner']:
+        all_users.add(auth_data['owner'])
+        
+    for item in alerts:
+        title = item['title'].lower()
+        # Handle exceptions where Higher = Bad for USD
+        if 'unemployment' in title or 'jobless' in title:
+            impact_high = "USD weakens 🔴 -> Gold/Crypto Pumps 🟢"
+            impact_low = "USD strengthens 🟢 -> Gold/Crypto Drops 🔴"
+        else:
+            impact_high = "USD strengthens 🟢 -> Gold/Crypto Drops 🔴"
+            impact_low = "USD weakens 🔴 -> Gold/Crypto Pumps 🟢"
+
+        msg = f"⚠️ **HIGH IMPACT NEWS APPROACHING** ⚠️\n\n"
+        msg += f"📰 **Event:** `{item['title']}`\n"
+        msg += f"⏳ **Time Left:** `~{item['time_left']} mins`\n"
+        msg += f"📉 **Forecast:** `{item['forecast']}` (Previous Data: `{item['previous']}`)\n\n"
+        msg += f"📊 **Market Impact Guide:**\n"
+        msg += f"▪️ If data comes > Forecast: {impact_high}\n"
+        msg += f"▪️ If data comes < Forecast: {impact_low}\n\n"
+        msg += f"💡 _Manage your open positions! Expect extreme volatility._\n"
+        
+        for uid in all_users:
+            try:
+                await context.bot.send_message(chat_id=uid, text=msg, parse_mode='Markdown')
+            except Exception:
+                pass
+
 def setup_bot():
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
     if not token:
@@ -789,6 +845,7 @@ def setup_bot():
     job_queue.run_repeating(check_alerts, interval=20, first=10)
     job_queue.run_repeating(check_active_trades, interval=20, first=15)
     job_queue.run_repeating(notify_sessions, interval=60, first=5)
+    job_queue.run_repeating(check_news_alerts, interval=900, first=20)
     
     return application
 

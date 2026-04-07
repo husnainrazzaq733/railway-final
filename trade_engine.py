@@ -81,3 +81,11 @@ def update_trade_target_hit(trade_id, target_level):
                 t['t2_hit'] = True
             break
     save_trades(trades)
+
+def update_trade_sl(trade_id, new_sl):
+    trades = load_trades()
+    for t in trades:
+        if t['id'] == trade_id:
+            t['stop_loss'] = new_sl
+            break
+    save_trades(trades)

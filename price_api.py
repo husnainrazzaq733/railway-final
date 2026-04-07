@@ -42,8 +42,37 @@ def get_forex_price(symbol):
         price = ticker.fast_info.last_price
         return float(price)
     except Exception as e:
-        print(f"Error fetching forex price for {symbol}: {e}")
-        return None
+        print(f"Error fetching forex price via yfinance for {symbol}: {e}")
+        
+    # Fallback 1: Raw Yahoo Finance API
+    try:
+        url = f"https://query2.finance.yahoo.com/v8/finance/chart/{symbol}"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        }
+        response = requests.get(url, headers=headers, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            if data.get('chart', {}).get('result'):
+                price = data['chart']['result'][0]['meta']['regularMarketPrice']
+                return float(price)
+    except Exception as e:
+        print(f"Error fetching forex price via Yahoo API for {symbol}: {e}")
+
+    # Fallback 2: For Gold specifically, try Bybit Perpetual
+    if symbol in ['XAUUSD=X', 'GC=F', 'GOLD']:
+        try:
+            url = "https://api.bybit.com/v5/market/tickers?category=linear&symbol=XAUUSDT"
+            response = requests.get(url, timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                if data.get('retCode') == 0 and data.get('result', {}).get('list'):
+                    price = data['result']['list'][0]['lastPrice']
+                    return float(price)
+        except Exception as e:
+            print(f"Error fetching Gold via Bybit API for {symbol}: {e}")
+
+    return None
 
 def get_price(symbol):
     """
@@ -98,3 +127,57 @@ def get_price(symbol):
             return price, 'forex', symbol_clean
 
     return None, None, None
+
+def get_pivot_points(symbol, is_crypto=True, is_gold=False, is_swap=False):
+    """
+    Fetch 24h High/Low and calculate Pivot, R1, R2, S1, S2
+    """
+    try:
+        high = None
+        low = None
+        close = None
+        
+        if is_gold:
+            url = "https://api.bybit.com/v5/market/tickers?category=linear&symbol=XAUUSDT"
+            res = requests.get(url, timeout=10)
+            if res.status_code == 200:
+                data = res.json()
+                if data.get('retCode') == 0 and data.get('result', {}).get('list'):
+                    tick = data['result']['list'][0]
+                    high = float(tick['highPrice24h'])
+                    low = float(tick['lowPrice24h'])
+                    close = float(tick['lastPrice'])
+        elif is_crypto:
+            if is_swap:
+                url = f"https://fapi.binance.com/fapi/v1/ticker/24hr?symbol={symbol}"
+            else:
+                url = f"https://api.binance.com/api/v3/ticker/24hr?symbol={symbol}"
+            res = requests.get(url, timeout=10)
+            if res.status_code == 200:
+                data = res.json()
+                if 'highPrice' in data and 'lowPrice' in data:
+                    high = float(data['highPrice'])
+                    low = float(data['lowPrice'])
+                    close = float(data['lastPrice'])
+                    
+        if high and low and close:
+            p = (high + low + close) / 3
+            r1 = (p * 2) - low
+            s1 = (p * 2) - high
+            r2 = p + (high - low)
+            s2 = p - (high - low)
+            
+            # Format precision based on general price
+            decimals = 2 if close > 10 else 4
+            
+            return {
+                'p': round(p, decimals),
+                'r1': round(r1, decimals),
+                's1': round(s1, decimals),
+                'r2': round(r2, decimals),
+                's2': round(s2, decimals)
+            }
+    except Exception as e:
+        print(f"Error calculating pivots for {symbol}: {e}")
+        
+    return None
