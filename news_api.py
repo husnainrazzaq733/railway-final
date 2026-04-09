@@ -46,6 +46,7 @@ def get_upcoming_high_impact_news(minutes_ahead=30):
                     upcoming.append({
                         'title': event.get('title'),
                         'time_left': int(delta_minutes),
+                        'event_time_utc': event_time_utc,
                         'forecast': event.get('forecast', 'N/A'),
                         'previous': event.get('previous', 'N/A'),
                         # fallback ID if no native ID from FF
@@ -85,3 +86,42 @@ def check_and_get_news_alerts():
              json.dump(new_notified, f)
              
     return to_alert
+
+def get_today_high_impact_news():
+    """آج کی تمام High Impact USD news return کرتی ہے (پرانی اور آنے والی دونوں)۔"""
+    events = fetch_ff_calendar()
+    if not events:
+        return []
+
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
+    # PKT = UTC+5
+    today_pkt = (now_utc + datetime.timedelta(hours=5)).date()
+
+    todays_events = []
+    for event in events:
+        if event.get('impact') == 'High' and event.get('country') == 'USD':
+            date_str = event.get('date', "")
+            if not date_str:
+                continue
+            try:
+                if date_str.endswith("Z"):
+                    date_str = date_str[:-1] + "+00:00"
+                event_time_utc = datetime.datetime.fromisoformat(date_str).astimezone(datetime.timezone.utc)
+                event_time_pkt = event_time_utc + datetime.timedelta(hours=5)
+                if event_time_pkt.date() == today_pkt:
+                    delta_minutes = (event_time_utc - now_utc).total_seconds() / 60.0
+                    status = "✅ Done" if delta_minutes < 0 else f"⏳ in ~{int(delta_minutes)} mins"
+                    todays_events.append({
+                        'title': event.get('title'),
+                        'event_time_pkt': event_time_pkt,
+                        'forecast': event.get('forecast', 'N/A'),
+                        'previous': event.get('previous', 'N/A'),
+                        'status': status,
+                        'is_past': delta_minutes < 0
+                    })
+            except Exception:
+                pass
+
+    # time کے حساب سے sort کریں
+    todays_events.sort(key=lambda x: x['event_time_pkt'])
+    return todays_events

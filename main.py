@@ -129,6 +129,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "🔹 `/mytrades` - View tracked trades\n"
             "🔹 `/deletetrade <id>` - Remove tracked trade\n"
             "🔹 `/session` - Live Forex trading sessions\n"
+            "🔹 `/todaynews` - Today's High Impact USD News 📰\n"
         )
         if auth.is_owner(update.effective_user.id):
             help_text += (
@@ -793,8 +794,18 @@ async def check_news_alerts(context: ContextTypes.DEFAULT_TYPE):
             impact_high = "USD strengthens 🟢 -> Gold/Crypto Drops 🔴"
             impact_low = "USD weakens 🔴 -> Gold/Crypto Pumps 🟢"
 
+        # Convert event UTC time to PKT for display
+        event_time_utc = item.get('event_time_utc')
+        if event_time_utc:
+            import datetime as _dt
+            event_time_pkt = event_time_utc + _dt.timedelta(hours=5)
+            event_time_str = event_time_pkt.strftime('%I:%M %p PKT')
+        else:
+            event_time_str = "N/A"
+
         msg = f"⚠️ **HIGH IMPACT NEWS APPROACHING** ⚠️\n\n"
         msg += f"📰 **Event:** `{item['title']}`\n"
+        msg += f"🕐 **Scheduled At:** `{event_time_str}`\n"
         msg += f"⏳ **Time Left:** `~{item['time_left']} mins`\n"
         msg += f"📉 **Forecast:** `{item['forecast']}` (Previous Data: `{item['previous']}`)\n\n"
         msg += f"📊 **Market Impact Guide:**\n"
@@ -807,6 +818,39 @@ async def check_news_alerts(context: ContextTypes.DEFAULT_TYPE):
                 await context.bot.send_message(chat_id=uid, text=msg, parse_mode='Markdown')
             except Exception:
                 pass
+
+async def todaynews_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from news_api import get_today_high_impact_news
+    
+    await update.message.reply_text("⏳ Fetching today's high impact USD news...")
+    
+    events = get_today_high_impact_news()
+    
+    if not events:
+        await update.message.reply_text(
+            "✅ No high impact USD news scheduled for today!\n"
+            f"⏰ {get_current_time_str()}"
+        )
+        return
+    
+    # Get today's date in PKT
+    today_pkt = (datetime.datetime.utcnow() + datetime.timedelta(hours=5)).strftime('%d %b %Y')
+    
+    text = f"📅 **Today's High Impact USD News** ({today_pkt})\n"
+    text += f"━━━━━━━━━━━━━━━━━━\n\n"
+    
+    for e in events:
+        time_str = e['event_time_pkt'].strftime('%I:%M %p')
+        status_emoji = "✅" if e['is_past'] else "🔴"
+        text += f"{status_emoji} **{time_str} PKT** — `{e['title']}`\n"
+        text += f"   📊 Forecast: `{e['forecast']}` | Prev: `{e['previous']}`\n"
+        text += f"   _{e['status']}_\n\n"
+    
+    text += f"━━━━━━━━━━━━━━━━━━\n"
+    text += f"🔴 = Upcoming  |  ✅ = Already Released\n"
+    text += f"⏰ {get_current_time_str()}"
+    
+    await update.message.reply_text(text, parse_mode='Markdown')
 
 def setup_bot():
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
@@ -838,6 +882,7 @@ def setup_bot():
     application.add_handler(CommandHandler('removeuser', removeuser_command))
     application.add_handler(CommandHandler('users', users_command))
     application.add_handler(CommandHandler('session', session_command))
+    application.add_handler(CommandHandler('todaynews', todaynews_command))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
     application.add_handler(CallbackQueryHandler(button_handler))
     
