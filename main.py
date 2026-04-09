@@ -209,6 +209,82 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text(text=f"📈 **Live Price for {resolved_symbol}:** `{price}`{rec}\n\n⏰ {get_current_time_str()}", parse_mode='Markdown')
         else:
             await query.edit_message_text(text=f"❌ Could not fetch price for {symbol}.")
+        return
+
+    if data.startswith('trade_detail_'):
+        trade_id = int(data.replace('trade_detail_', ''))
+        all_trades = trade_engine.load_trades()
+        t = next((x for x in all_trades if x['id'] == trade_id), None)
+        if not t:
+            await query.answer("Trade not found!", show_alert=True)
+            return
+
+        # Fetch live price
+        current_price, _, _ = get_price(t['symbol'])
+        ptype = "🟢 LONG" if t['is_long'] else "🔴 SHORT"
+        risk = abs(t['entry_price'] - t['stop_loss'])
+
+        # P&L status
+        if current_price:
+            if t['is_long']:
+                pnl_pips = current_price - t['entry_price']
+            else:
+                pnl_pips = t['entry_price'] - current_price
+            pnl_pct = (pnl_pips / t['entry_price']) * 100
+            pnl_emoji = "🟢" if pnl_pips >= 0 else "🔴"
+            pnl_str = f"{pnl_emoji} `{pnl_pips:+.4f}` ({pnl_pct:+.2f}%)"
+            price_str = f"`{current_price}`"
+        else:
+            pnl_str = "N/A"
+            price_str = "N/A"
+
+        # Trailing SL status
+        sl_note = ""
+        if t['t2_hit']:
+            sl_note = "🔒 _Trailing SL moved to T1 (T2 hit)_"
+        elif t['t1_hit']:
+            sl_note = "🔒 _Trailing SL moved to Entry (T1 hit)_"
+
+        # Target progress
+        t1_s = "✅ HIT" if t['t1_hit'] else "⏳ Pending"
+        t2_s = "✅ HIT" if t['t2_hit'] else "⏳ Pending"
+
+        msg = (
+            f"📊 **Trade #{t['id']} — Full Details**\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"🪙 **Pair:** `{t['symbol']}`\n"
+            f"📌 **Position:** {ptype}\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"🎯 **Entry:** `{t['entry_price']}`\n"
+            f"🛑 **Stop Loss:** `{t['stop_loss']}`\n"
+            f"📏 **Risk (pips/pts):** `{round(risk, 4)}`\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"🎯 **Targets (RR)**\n"
+            f"  T1 (1:1.5) → `{round(t['t1'], 4)}` — {t1_s}\n"
+            f"  T2 (1:2.0) → `{round(t['t2'], 4)}` — {t2_s}\n"
+            f"  T3 (1:3.0) → `{round(t['t3'], 4)}` — 🚀\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"💹 **Live Price:** {price_str}\n"
+            f"📈 **Unrealized P&L:** {pnl_str}\n"
+        )
+        if sl_note:
+            msg += f"{sl_note}\n"
+        msg += f"━━━━━━━━━━━━━━━━━━\n⏰ {get_current_time_str()}"
+
+        keyboard = [[InlineKeyboardButton("🗑️ Delete This Trade", callback_data=f"trade_delete_{t['id']}")]]
+        await query.edit_message_text(text=msg, parse_mode='Markdown', reply_markup=InlineKeyboardMarkup(keyboard))
+        return
+
+    if data.startswith('trade_delete_'):
+        trade_id = int(data.replace('trade_delete_', ''))
+        # verify ownership
+        user_trades = trade_engine.get_user_trades(query.from_user.id)
+        if any(t['id'] == trade_id for t in user_trades):
+            trade_engine.remove_trade(trade_id)
+            await query.edit_message_text(text=f"🗑️ **Trade #{trade_id}** has been deleted.", parse_mode='Markdown')
+        else:
+            await query.answer("❌ You cannot delete this trade.", show_alert=True)
+        return
 
 async def spot_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
@@ -548,16 +624,40 @@ async def mytrades_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not trades:
         await update.message.reply_text("You are not tracking any trades.")
         return
-        
-    text = f"📋 **Your Tracked Trades:**\n⏰ {get_current_time_str()}\n\n"
+
+    await update.message.reply_text(
+        f"📋 **Your Tracked Trades:**\n"
+        f"⏰ {get_current_time_str()}\n"
+        f"_Click a trade to see full details._",
+        parse_mode='Markdown'
+    )
 
     for t in trades:
-        ptype = "LONG" if t['is_long'] else "SHORT"
-        text += f"🔹 **ID: {t['id']}** | `{t['symbol']}` | {ptype} @ {t['entry_price']} | SL: {t['stop_loss']}\n"
-        if t['t1_hit']: text += "   ✅ Target 1 Hit\n"
-        if t['t2_hit']: text += "   ✅ Target 2 Hit\n"
-    text += "\n_Use /deletetrade <ID> to stop tracking._"
-    await update.message.reply_text(text, parse_mode='Markdown')
+        ptype = "🟢 LONG" if t['is_long'] else "🔴 SHORT"
+        t1_status = "✅" if t['t1_hit'] else "⏳"
+        t2_status = "✅" if t['t2_hit'] else "⏳"
+
+        card = (
+            f"🔸 **Trade #{t['id']}** — `{t['symbol']}`\n"
+            f"📌 {ptype} @ `{t['entry_price']}`\n"
+            f"🛑 Stop Loss: `{t['stop_loss']}`\n"
+            f"{t1_status} T1: `{round(t['t1'], 4)}`   "
+            f"{t2_status} T2: `{round(t['t2'], 4)}`   "
+            f"🚀 T3: `{round(t['t3'], 4)}`"
+        )
+
+        keyboard = [
+            [
+                InlineKeyboardButton("📊 Full Details", callback_data=f"trade_detail_{t['id']}"),
+                InlineKeyboardButton("🗑️ Delete", callback_data=f"trade_delete_{t['id']}")
+            ]
+        ]
+        await update.message.reply_text(
+            card,
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+
 
 async def deletetrade_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
