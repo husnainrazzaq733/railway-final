@@ -1,28 +1,5 @@
 import requests
 import yfinance as yf
-import os
-from dotenv import load_dotenv
-load_dotenv()
-
-def get_gold_price_goldapi():
-    """
-    Fetch Gold bid price from GoldAPI — matches MT5 bid price.
-    """
-    try:
-        api_key = os.environ.get('GOLDAPI_KEY', '')
-        if not api_key:
-            return None
-        url = "https://www.goldapi.io/api/XAU/USD"
-        headers = {"x-access-token": api_key, "Content-Type": "application/json"}
-        r = requests.get(url, headers=headers, timeout=8)
-        if r.status_code == 200:
-            d = r.json()
-            bid = d.get('bid')
-            if bid:
-                return float(bid)
-    except Exception as e:
-        print(f"Error fetching Gold price from GoldAPI: {e}")
-    return None
 
 def get_swap_price(symbol):
     """
@@ -57,14 +34,8 @@ def get_spot_price(symbol):
 def get_forex_price(symbol):
     """
     Fetch forex price from yfinance.
-    For Gold (XAUUSD=X), uses GoldAPI bid price first (matches MT5).
+    Ensure symbol has =X at the end, e.g., EURUSD=X.
     """
-    # PRIMARY: For Gold, use GoldAPI bid price (matches MT5 exactly)
-    if symbol in ['XAUUSD=X', 'GC=F', 'GOLD']:
-        gold_price = get_gold_price_goldapi()
-        if gold_price is not None:
-            return gold_price
-
     try:
         ticker = yf.Ticker(symbol)
         # fast_info is efficient for current price
@@ -88,18 +59,6 @@ def get_forex_price(symbol):
     except Exception as e:
         print(f"Error fetching forex price via Yahoo API for {symbol}: {e}")
 
-    # Fallback 2: For Gold specifically, try Bybit Perpetual
-    if symbol in ['XAUUSD=X', 'GC=F', 'GOLD']:
-        try:
-            url = "https://api.bybit.com/v5/market/tickers?category=linear&symbol=XAUUSDT"
-            response = requests.get(url, timeout=10)
-            if response.status_code == 200:
-                data = response.json()
-                if data.get('retCode') == 0 and data.get('result', {}).get('list'):
-                    price = data['result']['list'][0]['lastPrice']
-                    return float(price)
-        except Exception as e:
-            print(f"Error fetching Gold via Bybit API for {symbol}: {e}")
 
     return None
 
