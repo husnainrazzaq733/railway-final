@@ -888,6 +888,16 @@ async def notify_sessions(context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             pass
 
+def get_news_bias_text(title):
+    title_lower = title.lower()
+    if 'unemployment' in title_lower or 'jobless' in title_lower:
+        impact_high = "USD Weakens 🔴 👉 **🟢 BUY GOLD** (and Crypto Pumps)"
+        impact_low = "USD Strengthens 🟢 👉 **🔴 SELL GOLD** (and Crypto Drops)"
+    else:
+        impact_high = "USD Strengthens 🟢 👉 **🔴 SELL GOLD** (and Crypto Drops)"
+        impact_low = "USD Weakens 🔴 👉 **🟢 BUY GOLD** (and Crypto Pumps)"
+    return impact_high, impact_low
+
 async def check_news_alerts(context: ContextTypes.DEFAULT_TYPE):
     from news_api import check_and_get_news_alerts
     from auth import get_auth_data
@@ -902,14 +912,7 @@ async def check_news_alerts(context: ContextTypes.DEFAULT_TYPE):
         all_users.add(auth_data['owner'])
         
     for item in alerts:
-        title = item['title'].lower()
-        # Handle exceptions where Higher = Bad for USD
-        if 'unemployment' in title or 'jobless' in title:
-            impact_high = "USD weakens 🔴 -> Gold/Crypto Pumps 🟢"
-            impact_low = "USD strengthens 🟢 -> Gold/Crypto Drops 🔴"
-        else:
-            impact_high = "USD strengthens 🟢 -> Gold/Crypto Drops 🔴"
-            impact_low = "USD weakens 🔴 -> Gold/Crypto Pumps 🟢"
+        impact_high, impact_low = get_news_bias_text(item['title'])
 
         # Convert event UTC time to PKT for display
         event_time_utc = item.get('event_time_utc')
@@ -920,15 +923,46 @@ async def check_news_alerts(context: ContextTypes.DEFAULT_TYPE):
         else:
             event_time_str = "N/A"
 
-        msg = f"⚠️ **HIGH IMPACT NEWS APPROACHING** ⚠️\n\n"
+        msg = f"⚠️ **PREP FORECAST: 30 MIN TO HIGH IMPACT NEWS** ⚠️\n\n"
         msg += f"📰 **Event:** `{item['title']}`\n"
         msg += f"🕐 **Scheduled At:** `{event_time_str}`\n"
         msg += f"⏳ **Time Left:** `~{item['time_left']} mins`\n"
-        msg += f"📉 **Forecast:** `{item['forecast']}` (Previous Data: `{item['previous']}`)\n\n"
-        msg += f"📊 **Market Impact Guide:**\n"
-        msg += f"▪️ If data comes > Forecast: {impact_high}\n"
-        msg += f"▪️ If data comes < Forecast: {impact_low}\n\n"
-        msg += f"💡 _Manage your open positions! Expect extreme volatility._\n"
+        msg += f"📉 **Forecast:** `{item['forecast']}` (Previous: `{item['previous']}`)\n\n"
+        msg += f"📊 **HOW TO TRADE THIS EVENT:**\n"
+        msg += f"▪️ If ACTUAL > Forecast: {impact_high}\n"
+        msg += f"▪️ If ACTUAL < Forecast: {impact_low}\n\n"
+        msg += f"💡 _Stay ready! The bot will alert you exactly when the news is live._\n"
+        
+        for uid in all_users:
+            try:
+                await context.bot.send_message(chat_id=uid, text=msg, parse_mode='Markdown')
+            except Exception:
+                pass
+
+
+async def check_live_news_alerts(context: ContextTypes.DEFAULT_TYPE):
+    from news_api import check_and_get_live_news_alerts
+    from auth import get_auth_data
+    
+    live_alerts = check_and_get_live_news_alerts()
+    if not live_alerts:
+         return
+         
+    auth_data = get_auth_data()
+    all_users = set(auth_data['allowed_users'])
+    if auth_data['owner']:
+        all_users.add(auth_data['owner'])
+        
+    for item in live_alerts:
+        impact_high, impact_low = get_news_bias_text(item['title'])
+
+        msg = f"🚨🚨 **NEWS IS LIVE RIGHT NOW!** 🚨🚨\n\n"
+        msg += f"📰 **Event:** `{item['title']}`\n"
+        msg += f"📉 **Forecast was:** `{item['forecast']}` (Previous: `{item['previous']}`)\n\n"
+        msg += f"🔥 **QUICK ACTION GUIDE:**\n"
+        msg += f"▪️ If ACTUAL > Forecast: {impact_high}\n"
+        msg += f"▪️ If ACTUAL < Forecast: {impact_low}\n\n"
+        msg += f"💡 _Check the ACTUAL data on investing.com or your broker and take action immediately!_\n"
         
         for uid in all_users:
             try:
@@ -1008,6 +1042,7 @@ def setup_bot():
     job_queue.run_repeating(check_active_trades, interval=20, first=15)
     job_queue.run_repeating(notify_sessions, interval=60, first=5)
     job_queue.run_repeating(check_news_alerts, interval=900, first=20)
+    job_queue.run_repeating(check_live_news_alerts, interval=60, first=30)
     
     return application
 

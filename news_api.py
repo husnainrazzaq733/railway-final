@@ -87,6 +87,74 @@ def check_and_get_news_alerts():
              
     return to_alert
 
+NOTIFIED_LIVE_FILE = "notified_live_news.json"
+
+def get_live_high_impact_news():
+    events = fetch_ff_calendar()
+    if not events:
+        return []
+
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
+    live_news = []
+
+    for event in events:
+        if event.get('impact') == 'High' and event.get('country') == 'USD':
+            date_str = event.get('date', "")
+            if not date_str:
+                continue
+            
+            try:
+                if date_str.endswith("Z"):
+                    date_str = date_str[:-1] + "+00:00"
+                
+                event_time_utc = datetime.datetime.fromisoformat(date_str).astimezone(datetime.timezone.utc)
+                delta_minutes = (event_time_utc - now_utc).total_seconds() / 60.0
+                
+                # Check if news is happening RIGHT NOW (between -1 to +1 min)
+                if -1.5 <= delta_minutes <= 1.5:
+                    live_news.append({
+                        'title': event.get('title'),
+                        'time_left': int(delta_minutes),
+                        'event_time_utc': event_time_utc,
+                        'forecast': event.get('forecast', 'N/A'),
+                        'previous': event.get('previous', 'N/A'),
+                        'id': event.get('id', event.get('title') + "_" + date_str) 
+                    })
+            except Exception as e:
+                pass
+
+    return live_news
+
+def check_and_get_live_news_alerts():
+    live_upcoming = get_live_high_impact_news() 
+    
+    notified = []
+    if os.path.exists(NOTIFIED_LIVE_FILE):
+        try:
+            with open(NOTIFIED_LIVE_FILE, "r") as f:
+                notified = json.load(f)
+        except:
+            pass
+            
+    to_alert = []
+    new_notified = list(notified)
+
+    for item in live_upcoming:
+        uid = str(item['id'])
+        if uid not in notified:
+            to_alert.append(item)
+            new_notified.append(uid)
+            # keep array bounded
+            if len(new_notified) > 100:
+                 new_notified = new_notified[-50:]
+                 
+    if to_alert:
+         with open(NOTIFIED_LIVE_FILE, "w") as f:
+             json.dump(new_notified, f)
+             
+    return to_alert
+
+
 def get_today_high_impact_news():
     """آج کی تمام High Impact USD news return کرتی ہے (پرانی اور آنے والی دونوں)۔"""
     events = fetch_ff_calendar()
