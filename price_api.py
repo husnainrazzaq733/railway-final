@@ -59,6 +59,17 @@ def get_forex_price(symbol):
     except Exception as e:
         print(f"Error fetching forex price via Yahoo API for {symbol}: {e}")
 
+    # Fallback 2: For Gold specifically, try Binance PAXG (Spot Gold Proxy)
+    if symbol in ['XAUUSD=X', 'GC=F', 'GOLD']:
+        try:
+            url = "https://api.binance.com/api/v3/ticker/price?symbol=PAXGUSDT"
+            response = requests.get(url, timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                if 'price' in data:
+                    return float(data['price'])
+        except Exception as e:
+            print(f"Error fetching Gold via PAXG API for {symbol}: {e}")
 
     return None
 
