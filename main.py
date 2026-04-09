@@ -222,7 +222,21 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Fetch live price
         current_price, _, _ = get_price(t['symbol'])
         ptype = "🟢 LONG" if t['is_long'] else "🔴 SHORT"
-        risk = abs(t['entry_price'] - t['stop_loss'])
+        
+        # Pip calculation logic
+        sym = t['symbol'].upper()
+        ref_price = current_price if current_price else t['entry_price']
+        if 'JPY' in sym:
+            pip_size = 0.01
+        elif 'XAU' in sym or 'GOLD' in sym:
+            pip_size = 0.01
+        elif ref_price < 5: # Typical Forex pairs (e.g. EURUSD)
+            pip_size = 0.0001
+        else:
+            pip_size = 0.01 # Default
+            
+        risk_raw = abs(t['entry_price'] - t['stop_loss'])
+        risk_in_pips = risk_raw / pip_size
 
         # P&L status
         if current_price:
@@ -234,19 +248,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pnl_pct = (pnl_raw / t['entry_price']) * 100
             pnl_emoji = "🟢" if pnl_raw >= 0 else "🔴"
             
-            # Pip calculation logic
-            sym = t['symbol'].upper()
-            if 'JPY' in sym:
-                pip_size = 0.01
-            elif 'XAU' in sym or 'GOLD' in sym:
-                pip_size = 0.01
-            elif current_price < 5: # Typical Forex pairs (e.g. EURUSD)
-                pip_size = 0.0001
-            else:
-                pip_size = 0.01 # Default
-                
             pnl_in_pips = pnl_raw / pip_size
-            
             pnl_str = f"{pnl_emoji} `{pnl_raw:+.4f}` ({pnl_pct:+.2f}%) • **{pnl_in_pips:+.1f} Pips**"
             price_str = f"`{current_price}`"
         else:
@@ -272,7 +274,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"━━━━━━━━━━━━━━━━━━\n"
             f"🎯 **Entry:** `{t['entry_price']}`\n"
             f"🛑 **Stop Loss:** `{t['stop_loss']}`\n"
-            f"📏 **Risk (pips/pts):** `{round(risk, 4)}`\n"
+            f"📏 **Risk:** `{risk_in_pips:.1f} Pips`\n"
             f"━━━━━━━━━━━━━━━━━━\n"
             f"🎯 **Targets (RR)**\n"
             f"  T1 (1:1.5) → `{round(t['t1'], 4)}` — {t1_s}\n"
