@@ -4,7 +4,7 @@ import os
 from dotenv import load_dotenv
 
 load_dotenv()
-GOLDAPI_KEY = os.getenv("GOLDAPI_KEY")
+GOLDAPI_KEY = os.getenv("GOLDAPI_KEY", "goldapi-1bfp1smnqr9qyd-io")
 
 def get_swap_price(symbol):
     """
