@@ -1,5 +1,10 @@
 import requests
 import yfinance as yf
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+GOLDAPI_KEY = os.getenv("GOLDAPI_KEY")
 
 def get_swap_price(symbol):
     """
@@ -59,17 +64,19 @@ def get_forex_price(symbol):
     except Exception as e:
         print(f"Error fetching forex price via Yahoo API for {symbol}: {e}")
 
-    # Fallback 2: For Gold specifically, try Binance PAXG (Spot Gold Proxy)
+    # Fallback 2: For Gold specifically, use GoldAPI to get exact MT5 Spot Gold
     if symbol in ['XAUUSD=X', 'GC=F', 'GOLD']:
         try:
-            url = "https://api.binance.com/api/v3/ticker/price?symbol=PAXGUSDT"
-            response = requests.get(url, timeout=10)
-            if response.status_code == 200:
-                data = response.json()
-                if 'price' in data:
-                    return float(data['price'])
+            if GOLDAPI_KEY:
+                url = "https://www.goldapi.io/api/XAU/USD"
+                headers = {"x-access-token": GOLDAPI_KEY, "Content-Type": "application/json"}
+                response = requests.get(url, headers=headers, timeout=10)
+                if response.status_code == 200:
+                    data = response.json()
+                    if 'price' in data:
+                        return float(data['price'])
         except Exception as e:
-            print(f"Error fetching Gold via PAXG API for {symbol}: {e}")
+            print(f"Error fetching Gold via GoldAPI for {symbol}: {e}")
 
     return None
 
@@ -137,15 +144,16 @@ def get_pivot_points(symbol, is_crypto=True, is_gold=False, is_swap=False):
         close = None
         
         if is_gold:
-            url = "https://api.bybit.com/v5/market/tickers?category=linear&symbol=XAUUSDT"
-            res = requests.get(url, timeout=10)
-            if res.status_code == 200:
-                data = res.json()
-                if data.get('retCode') == 0 and data.get('result', {}).get('list'):
-                    tick = data['result']['list'][0]
-                    high = float(tick['highPrice24h'])
-                    low = float(tick['lowPrice24h'])
-                    close = float(tick['lastPrice'])
+            if GOLDAPI_KEY:
+                url = "https://www.goldapi.io/api/XAU/USD"
+                headers = {"x-access-token": GOLDAPI_KEY, "Content-Type": "application/json"}
+                res = requests.get(url, headers=headers, timeout=10)
+                if res.status_code == 200:
+                    data = res.json()
+                    if 'high_price' in data and 'low_price' in data:
+                        high = float(data['high_price'])
+                        low = float(data['low_price'])
+                        close = float(data['price'])
         elif is_crypto:
             if is_swap:
                 url = f"https://fapi.binance.com/fapi/v1/ticker/24hr?symbol={symbol}"
