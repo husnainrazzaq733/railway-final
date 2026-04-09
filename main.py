@@ -227,12 +227,27 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # P&L status
         if current_price:
             if t['is_long']:
-                pnl_pips = current_price - t['entry_price']
+                pnl_raw = current_price - t['entry_price']
             else:
-                pnl_pips = t['entry_price'] - current_price
-            pnl_pct = (pnl_pips / t['entry_price']) * 100
-            pnl_emoji = "🟢" if pnl_pips >= 0 else "🔴"
-            pnl_str = f"{pnl_emoji} `{pnl_pips:+.4f}` ({pnl_pct:+.2f}%)"
+                pnl_raw = t['entry_price'] - current_price
+            
+            pnl_pct = (pnl_raw / t['entry_price']) * 100
+            pnl_emoji = "🟢" if pnl_raw >= 0 else "🔴"
+            
+            # Pip calculation logic
+            sym = t['symbol'].upper()
+            if 'JPY' in sym:
+                pip_size = 0.01
+            elif 'XAU' in sym or 'GOLD' in sym:
+                pip_size = 0.01
+            elif current_price < 5: # Typical Forex pairs (e.g. EURUSD)
+                pip_size = 0.0001
+            else:
+                pip_size = 0.01 # Default
+                
+            pnl_in_pips = pnl_raw / pip_size
+            
+            pnl_str = f"{pnl_emoji} `{pnl_raw:+.4f}` ({pnl_pct:+.2f}%) • **{pnl_in_pips:+.1f} Pips**"
             price_str = f"`{current_price}`"
         else:
             pnl_str = "N/A"
