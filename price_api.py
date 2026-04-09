@@ -77,6 +77,22 @@ def get_forex_price(symbol):
                         return float(data['price'])
         except Exception as e:
             print(f"Error fetching Gold via GoldAPI for {symbol}: {e}")
+            
+        # Fallback 3: Yahoo GC=F (Futures) or Binance PAXGUSDT if GoldAPI quota exceeded
+        try:
+            # Let's try to get GC=F (Gold Futures) as a reliable last resort
+            url = "https://query2.finance.yahoo.com/v8/finance/chart/GC=F"
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            }
+            response = requests.get(url, headers=headers, timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                if data.get('chart', {}).get('result'):
+                    price = data['chart']['result'][0]['meta']['regularMarketPrice']
+                    return float(price)
+        except Exception as e:
+            print(f"Error fetching GC=F fallback for {symbol}: {e}")
 
     return None
 
@@ -147,13 +163,32 @@ def get_pivot_points(symbol, is_crypto=True, is_gold=False, is_swap=False):
             if GOLDAPI_KEY:
                 url = "https://www.goldapi.io/api/XAU/USD"
                 headers = {"x-access-token": GOLDAPI_KEY, "Content-Type": "application/json"}
-                res = requests.get(url, headers=headers, timeout=10)
-                if res.status_code == 200:
-                    data = res.json()
-                    if 'high_price' in data and 'low_price' in data:
-                        high = float(data['high_price'])
-                        low = float(data['low_price'])
-                        close = float(data['price'])
+                try:
+                    res = requests.get(url, headers=headers, timeout=10)
+                    if res.status_code == 200:
+                        data = res.json()
+                        if 'high_price' in data and 'low_price' in data:
+                            high = float(data['high_price'])
+                            low = float(data['low_price'])
+                            close = float(data['price'])
+                except Exception as e:
+                    print(f"Error calculating pivots for Gold via GoldAPI: {e}")
+            
+            # Fallback for gold pivots using Yahoo GC=F
+            if high is None or low is None or close is None:
+                try:
+                    url = "https://query2.finance.yahoo.com/v8/finance/chart/GC=F"
+                    headers = {"User-Agent": "Mozilla/5.0"}
+                    res = requests.get(url, headers=headers, timeout=10)
+                    if res.status_code == 200:
+                        data = res.json()
+                        meta = data.get('chart', {}).get('result', [{}])[0].get('meta', {})
+                        if 'regularMarketDayHigh' in meta and 'regularMarketDayLow' in meta:
+                            high = float(meta['regularMarketDayHigh'])
+                            low = float(meta['regularMarketDayLow'])
+                            close = float(meta['regularMarketPrice'])
+                except Exception as e:
+                    print(f"Error calculating pivots for Gold via Yahoo Fallback: {e}")
         elif is_crypto:
             if is_swap:
                 url = f"https://fapi.binance.com/fapi/v1/ticker/24hr?symbol={symbol}"
