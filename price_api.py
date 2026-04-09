@@ -78,7 +78,23 @@ def get_forex_price(symbol):
         except Exception as e:
             print(f"Error fetching Gold via GoldAPI for {symbol}: {e}")
             
-        # Fallback 3: Yahoo GC=F (Futures) or Binance PAXGUSDT if GoldAPI quota exceeded
+        # Fallback 3: TradingView Scanner for EXACT OANDA Spot Gold (Resolves $30 difference from Futures)
+        try:
+            url = "https://scanner.tradingview.com/cfd/scan"
+            payload = {
+                "symbols": {"tickers": ["OANDA:XAUUSD"]},
+                "columns": ["close"]
+            }
+            response = requests.post(url, json=payload, timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                if data.get('data') and len(data['data']) > 0:
+                    price = data['data'][0]['d'][0]
+                    return float(price)
+        except Exception as e:
+            print(f"Error fetching TradingView Spot Gold for {symbol}: {e}")
+
+        # Fallback 4: Yahoo GC=F (Futures) or Binance PAXGUSDT if all else fails
         try:
             # Let's try to get GC=F (Gold Futures) as a reliable last resort
             url = "https://query2.finance.yahoo.com/v8/finance/chart/GC=F"
@@ -174,7 +190,26 @@ def get_pivot_points(symbol, is_crypto=True, is_gold=False, is_swap=False):
                 except Exception as e:
                     print(f"Error calculating pivots for Gold via GoldAPI: {e}")
             
-            # Fallback for gold pivots using Yahoo GC=F
+            # Fallback for gold pivots using TradingView Spot Gold
+            if high is None or low is None or close is None:
+                try:
+                    url = "https://scanner.tradingview.com/cfd/scan"
+                    payload = {
+                        "symbols": {"tickers": ["OANDA:XAUUSD"]},
+                        "columns": ["close", "high", "low"]
+                    }
+                    res = requests.post(url, json=payload, timeout=10)
+                    if res.status_code == 200:
+                        data = res.json()
+                        if data.get('data') and len(data['data']) > 0:
+                            values = data['data'][0]['d']
+                            close = float(values[0])
+                            high = float(values[1])
+                            low = float(values[2])
+                except Exception as e:
+                    print(f"Error calculating pivots for Gold via TradingView Fallback: {e}")
+
+            # Fallback for gold pivots using Yahoo GC=F if TV fails
             if high is None or low is None or close is None:
                 try:
                     url = "https://query2.finance.yahoo.com/v8/finance/chart/GC=F"
