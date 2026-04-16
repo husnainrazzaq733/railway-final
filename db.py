@@ -11,6 +11,7 @@ db = None
 alerts_collection = None
 trades_collection = None
 auth_collection = None
+history_collection = None
 
 if MONGO_URI:
     try:
@@ -20,11 +21,13 @@ if MONGO_URI:
         alerts_collection = db['alerts']
         trades_collection = db['trades']
         auth_collection = db['auth']
+        history_collection = db['history']
         print("✅ MongoDB Connected Successfully!")
     except Exception as e:
         print(f"❌ MongoDB Connection failed: {e}")
         alerts_collection = None
         trades_collection = None
         auth_collection = None
+        history_collection = None
 else:
     print("⚠️ No MONGO_URI found. Falling back to local .json file storage.")

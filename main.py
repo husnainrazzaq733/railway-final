@@ -61,6 +61,17 @@ async def get_recommendation_text_async(symbol, market_type):
     else:
         return f"\n\n⚪ **Signal:** NEUTRAL"
 
+def get_pip_size(sym, ref_price):
+    sym = sym.upper()
+    if 'JPY' in sym:
+        return 0.01
+    elif 'XAU' in sym or 'GOLD' in sym:
+        return 0.01
+    elif ref_price < 5: # Typical Forex pairs (e.g. EURUSD)
+        return 0.0001
+    else:
+        return 0.01
+
 async def auth_middleware(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Process only physical user interactions
     if not update.effective_user:
@@ -129,6 +140,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "🔹 `/limitentry` - Pending Limit Trade (e.g `/limitentry BTC 65000 64000`)\n"
             "🔹 `/mytrades` - View tracked trades\n"
             "🔹 `/deletetrade <id>` - Remove tracked trade\n"
+            "🔹 `/stats` - View Trade History & PnL Report\n"
             "🔹 `/session` - Live Forex trading sessions\n"
             "🔹 `/todaynews` - Today's High Impact USD News 📰\n"
         )
@@ -225,16 +237,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ptype = "🟢 LONG" if t['is_long'] else "🔴 SHORT"
         
         # Pip calculation logic
-        sym = t['symbol'].upper()
         ref_price = current_price if current_price else t['entry_price']
-        if 'JPY' in sym:
-            pip_size = 0.01
-        elif 'XAU' in sym or 'GOLD' in sym:
-            pip_size = 0.01
-        elif ref_price < 5: # Typical Forex pairs (e.g. EURUSD)
-            pip_size = 0.0001
-        else:
-            pip_size = 0.01 # Default
+        pip_size = get_pip_size(t['symbol'], ref_price)
             
         risk_raw = abs(t['entry_price'] - t['stop_loss'])
         risk_in_pips = risk_raw / pip_size
@@ -258,10 +262,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # Trailing SL status
         sl_note = ""
-        if t['t2_hit']:
-            sl_note = "🔒 _Trailing SL moved to T1 (T2 hit)_"
-        elif t['t1_hit']:
-            sl_note = "🔒 _Trailing SL moved to Entry (T1 hit)_"
 
         # Target progress
         t1_s = "✅ HIT" if t['t1_hit'] else "⏳ Pending"
@@ -297,9 +297,20 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         trade_id = int(data.replace('trade_delete_', ''))
         # verify ownership
         user_trades = trade_engine.get_user_trades(query.from_user.id)
-        if any(t['id'] == trade_id for t in user_trades):
+        t = next((x for x in user_trades if x['id'] == trade_id), None)
+        if t:
             trade_engine.remove_trade(trade_id)
-            await query.edit_message_text(text=f"🗑️ **Trade #{trade_id}** has been deleted.", parse_mode='Markdown')
+            if t.get('status', 'active') == 'pending':
+                await query.edit_message_text(text=f"🗑️ **Pending Limit Trade #{trade_id}** canceled.", parse_mode='Markdown')
+            else:
+                current_price, _, _ = get_price(t['symbol'])
+                if current_price and not t.get('history_logged'):
+                    pnl_raw = current_price - t['entry_price'] if t['is_long'] else t['entry_price'] - current_price
+                    pip_size = get_pip_size(t['symbol'], current_price)
+                    pnl_pips = pnl_raw / pip_size
+                    outcome = "Win" if pnl_raw > 0 else "Loss" if pnl_raw < 0 else "Breakeven"
+                    trade_engine.add_history_record(query.from_user.id, t['symbol'], t['is_long'], pnl_pips, outcome, pnl_raw)
+                await query.edit_message_text(text=f"✅ **Trade #{trade_id} Closed.** \nOutcome logged to History.", parse_mode='Markdown')
         else:
             await query.answer("❌ You cannot delete this trade.", show_alert=True)
         return
@@ -642,6 +653,36 @@ async def tracktrade_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     
     await update.message.reply_text(msg, parse_mode='Markdown')
 
+async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    stats = trade_engine.get_user_stats(update.message.chat_id)
+    
+    if stats['total'] == 0:
+        await update.message.reply_text("📉 You do not have any closed trades yet. Use `/tracktrade` or `/limitentry` to start trading!")
+        return
+        
+    emoji_win = "🏆" if stats['win_rate'] >= 50 else "📉"
+    pnl_emoji = "🟢" if stats['total_pips'] >= 0 else "🔴"
+    
+    msg = f"📊 **YOUR TRADING STATS & PNL** 📊\n"
+    msg += f"━━━━━━━━━━━━━━━━━━\n"
+    msg += f"🔹 **Total Trades Closed:** `{stats['total']}`\n"
+    msg += f"✅ **Trades Won:** `{stats['won']}`\n"
+    msg += f"❌ **Trades Lost:** `{stats['lost']}`\n"
+    msg += f"⚖️ **Breakeven:** `{stats['breakeven']}`\n"
+    msg += f"━━━━━━━━━━━━━━━━━━\n"
+    msg += f"{emoji_win} **Win Rate:** `{stats['win_rate']}%`\n"
+    msg += f"{pnl_emoji} **Total PnL:** `{stats['total_pips']:.1f} Pips`\n"
+    msg += f"━━━━━━━━━━━━━━━━━━\n"
+    msg += f"🕒 **Last 10 Trades:**\n"
+    
+    for h in sorted(stats['history'], key=lambda x: x['date'], reverse=True)[:10]:
+        o_tag = "✅" if h['outcome']=='Win' else "❌" if h['outcome']=='Loss' else "⚪"
+        pips_tag = f"{h.get('result_pips', 0):+.1f}p"
+        msg += f"{o_tag} `{h['symbol']}` ({'L' if h['is_long'] else 'S'}) 👉 {pips_tag}\n"
+        
+    msg += f"\n⏰ {get_current_time_str()}"
+    await update.message.reply_text(msg, parse_mode='Markdown')
+
 async def limitentry_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(context.args) < 3:
         await update.message.reply_text("ℹ️ Usage: /limitentry <symbol> <entry_price> <stop_loss>\nExample: /limitentry BTCUSDT 65000 64000")
@@ -741,11 +782,20 @@ async def deletetrade_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
         
     user_trades = trade_engine.get_user_trades(update.message.chat_id)
-    trade_exists = any(t['id'] == trade_id for t in user_trades)
-    
-    if trade_exists:
+    t = next((x for x in user_trades if x['id'] == trade_id), None)
+    if t:
         trade_engine.remove_trade(trade_id)
-        await update.message.reply_text(f"🗑️ Tracked trade ID {trade_id} has been deleted permanently.")
+        if t.get('status', 'active') == 'pending':
+            await update.message.reply_text(f"🗑️ **Pending Limit Trade #{trade_id}** canceled.", parse_mode='Markdown')
+        else:
+            current_price, _, _ = get_price(t['symbol'])
+            if current_price:
+                pnl_raw = current_price - t['entry_price'] if t['is_long'] else t['entry_price'] - current_price
+                pip_size = get_pip_size(t['symbol'], current_price)
+                pnl_pips = pnl_raw / pip_size
+                outcome = "Win" if pnl_raw > 0 else "Loss" if pnl_raw < 0 else "Breakeven"
+                trade_engine.add_history_record(update.message.chat_id, t['symbol'], t['is_long'], pnl_pips, outcome, pnl_raw)
+            await update.message.reply_text(f"✅ **Trade #{trade_id} Closed.** Outcome logged to History.", parse_mode='Markdown')
     else:
         await update.message.reply_text(f"❌ You do not have an active tracked trade with ID {trade_id}.")
 
@@ -788,14 +838,31 @@ async def check_active_trades(context: ContextTypes.DEFAULT_TYPE):
         
         try:
             if sl_hit:
+                if not t.get('history_logged'):
+                    if t['stop_loss'] == t['entry_price']:
+                        outcome = "Breakeven"
+                        pips = 0.0
+                        risk_raw = 0.0
+                    else:
+                        outcome = "Loss"
+                        pip_size = get_pip_size(t['symbol'], t['entry_price'])
+                        risk_raw = t['stop_loss'] - t['entry_price'] if t['is_long'] else t['entry_price'] - t['stop_loss']
+                        pips = risk_raw / pip_size
+                        
+                    trade_engine.add_history_record(t['chat_id'], t['symbol'], t['is_long'], pips, outcome, risk_raw)
+
                 msg = f"😭 **STOP LOSS HIT!** 😭\n"
                 msg += f"━━━━━━━━━━━━━━━━━━\n"
-                msg += f"💔 Oh no... The market went against us!\n\n"
+                if outcome == "Breakeven":
+                    msg += f"🛡️ Trade Closed at Breakeven! No Loss!\n\n"
+                else:
+                    msg += f"💔 Oh no... The market went against us!\n\n"
                 msg += f"🔸 **Pair:** {base_msg_info}\n"
                 msg += f"🔸 **Stop Loss At:** `{t['stop_loss']}`\n"
                 msg += f"🔸 **Current Price:** `{current_price}`\n"
                 msg += f"━━━━━━━━━━━━━━━━━━\n"
-                msg += f"Better luck next time! 😔\n"
+                if outcome == "Loss":
+                    msg += f"Better luck next time! 😔\n"
                 msg += f"⏰ {get_current_time_str()}"
                 
                 await context.bot.send_message(chat_id=t['chat_id'], text=msg, parse_mode='Markdown')
@@ -803,6 +870,13 @@ async def check_active_trades(context: ContextTypes.DEFAULT_TYPE):
                 continue
                 
             if t3_new_hit:
+                if not t.get('history_logged'):
+                    pip_size = get_pip_size(t['symbol'], t['entry_price'])
+                    pnl_raw = t['t3'] - t['entry_price'] if t['is_long'] else t['entry_price'] - t['t3']
+                    pips = pnl_raw / pip_size
+                    trade_engine.add_history_record(t['chat_id'], t['symbol'], t['is_long'], pips, "Win", pnl_raw)
+                    trade_engine.mark_trade_history_logged(t['id'])
+                    
                 msg = f"🚀🚀 **FULL TARGET HIT! (1:3 RR)** 🚀🚀\n"
                 msg += f"━━━━━━━━━━━━━━━━━━\n"
                 msg += f"👑 YOU ARE A TRADING LEGEND! 🥂💰\n\n"
@@ -830,7 +904,6 @@ async def check_active_trades(context: ContextTypes.DEFAULT_TYPE):
                 msg += f"🔸 **Pair:** {base_msg_info}\n"
                 msg += f"🔸 **Target Reached:** `{t['t2']}`\n"
                 msg += f"🔸 **Current Price:** `{current_price}`\n"
-                msg += f"🔒 **Stop Loss is set to Breakeven** `{t['t1']}`\n"
                 msg += f"━━━━━━━━━━━━━━━━━━\n"
                 msg += f"⏰ {get_current_time_str()}"
 
@@ -845,13 +918,11 @@ async def check_active_trades(context: ContextTypes.DEFAULT_TYPE):
                 msg += f"🔸 **Pair:** {base_msg_info}\n"
                 msg += f"🔸 **Target Reached:** `{t['t1']}`\n"
                 msg += f"🔸 **Current Price:** `{current_price}`\n"
-                msg += f"🔒 **Stop Loss Moved to Entry:** `{t['entry_price']}`\n"
                 msg += f"━━━━━━━━━━━━━━━━━━\n"
                 msg += f"⏰ {get_current_time_str()}"
 
                 await context.bot.send_message(chat_id=t['chat_id'], text=msg, parse_mode='Markdown')
                 trade_engine.update_trade_target_hit(t['id'], 1)
-                trade_engine.update_trade_sl(t['id'], t['entry_price'])
         except Exception as e:
             import logging
             logging.error(f"Failed to send trade alert to {t['chat_id']}: {e}")
@@ -1099,6 +1170,7 @@ def setup_bot():
     application.add_handler(CommandHandler('limitentry', limitentry_command))
     application.add_handler(CommandHandler('mytrades', mytrades_command))
     application.add_handler(CommandHandler('deletetrade', deletetrade_command))
+    application.add_handler(CommandHandler('stats', stats_command))
     application.add_handler(CommandHandler('adduser', adduser_command))
     application.add_handler(CommandHandler('removeuser', removeuser_command))
     application.add_handler(CommandHandler('users', users_command))

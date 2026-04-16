@@ -1,8 +1,9 @@
 import json
 import os
-from db import trades_collection
+from db import trades_collection, history_collection
 
 TRADES_FILE = 'trades.json'
+HISTORY_FILE = 'history.json'
 
 def load_trades():
     if trades_collection is not None:
@@ -104,3 +105,71 @@ def update_trade_status(trade_id, status):
             t['status'] = status
             break
     save_trades(trades)
+
+def mark_trade_history_logged(trade_id):
+    trades = load_trades()
+    for t in trades:
+        if t['id'] == trade_id:
+            t['history_logged'] = True
+            break
+    save_trades(trades)
+
+def load_history():
+    if history_collection is not None:
+        return list(history_collection.find({}, {'_id': 0}))
+    if not os.path.exists(HISTORY_FILE):
+        return []
+    try:
+        with open(HISTORY_FILE, 'r') as f:
+            return json.load(f)
+    except Exception:
+        return []
+
+def save_history(history):
+    if history_collection is not None:
+        history_collection.delete_many({})
+        if history:
+            history_collection.insert_many(history)
+        return
+    with open(HISTORY_FILE, 'w') as f:
+        json.dump(history, f)
+
+def add_history_record(chat_id, symbol, is_long, result_pips, outcome, pnl_raw=0):
+    import datetime
+    history = load_history()
+    record = {
+        'chat_id': chat_id,
+        'symbol': symbol,
+        'is_long': is_long,
+        'result_pips': result_pips,
+        'outcome': outcome,
+        'pnl_raw': pnl_raw,
+        'date': datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+    }
+    history.append(record)
+    save_history(history)
+    return record
+
+def get_user_stats(chat_id):
+    history = load_history()
+    user_hist = [h for h in history if h['chat_id'] == chat_id]
+    
+    total = len(user_hist)
+    won = sum(1 for h in user_hist if h['outcome'] == 'Win')
+    lost = sum(1 for h in user_hist if h['outcome'] == 'Loss')
+    breakeven = sum(1 for h in user_hist if h['outcome'] == 'Breakeven')
+    total_pips = sum(h.get('result_pips', 0) for h in user_hist)
+    
+    win_rate = 0
+    if (won + lost) > 0:
+        win_rate = (won / (won + lost)) * 100
+        
+    return {
+        'total': total,
+        'won': won,
+        'lost': lost,
+        'breakeven': breakeven,
+        'total_pips': total_pips,
+        'win_rate': round(win_rate, 2),
+        'history': user_hist[-10:]
+    }
