@@ -141,6 +141,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "🔹 `/mytrades` - View tracked trades\n"
             "🔹 `/deletetrade <id>` - Remove tracked trade\n"
             "🔹 `/stats` - View Trade History & PnL Report\n"
+            "🔹 `/pipcalc` - Pips Calculator (e.g `/pipcalc BTC 65000 66000`)\n"
             "🔹 `/session` - Live Forex trading sessions\n"
             "🔹 `/todaynews` - Today's High Impact USD News 📰\n"
         )
@@ -683,6 +684,42 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg += f"\n⏰ {get_current_time_str()}"
     await update.message.reply_text(msg, parse_mode='Markdown')
 
+async def pipcalc_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if len(context.args) < 3:
+        await update.message.reply_text("ℹ️ Usage: /pipcalc <symbol> <entry_price> <exit_price>\nExample: /pipcalc BTCUSDT 65000 66000")
+        return
+        
+    symbol = context.args[0].upper()
+    try:
+        price1 = float(context.args[1])
+        price2 = float(context.args[2])
+    except ValueError:
+        await update.message.reply_text("❌ Prices must be valid numbers.")
+        return
+        
+    diff = price2 - price1
+    pip_size = get_pip_size(symbol, price1)
+    pips = abs(diff) / pip_size
+    
+    if diff > 0:
+        dir_text = "📈 UP"
+    elif diff < 0:
+        dir_text = "📉 DOWN"
+    else:
+        dir_text = "➖ NO CHANGE"
+        
+    msg = f"🧮 **Pips Calculator**\n"
+    msg += f"━━━━━━━━━━━━━━━━━━\n"
+    msg += f"🪙 **Symbol:** `{symbol}`\n"
+    msg += f"🔸 **Entry:** `{price1}`\n"
+    msg += f"🔸 **Exit:** `{price2}`\n"
+    msg += f"━━━━━━━━━━━━━━━━━━\n"
+    msg += f"📏 **Difference:** `{abs(diff):.4f}` ({dir_text})\n"
+    msg += f"🎯 **Total Pips:** `{pips:.1f} Pips`\n"
+    msg += f"⏰ {get_current_time_str()}"
+    
+    await update.message.reply_text(msg, parse_mode='Markdown')
+
 async def limitentry_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(context.args) < 3:
         await update.message.reply_text("ℹ️ Usage: /limitentry <symbol> <entry_price> <stop_loss>\nExample: /limitentry BTCUSDT 65000 64000")
@@ -860,6 +897,10 @@ async def check_active_trades(context: ContextTypes.DEFAULT_TYPE):
                 msg += f"🔸 **Pair:** {base_msg_info}\n"
                 msg += f"🔸 **Stop Loss At:** `{t['stop_loss']}`\n"
                 msg += f"🔸 **Current Price:** `{current_price}`\n"
+                if outcome == "Loss":
+                    msg += f"📉 **Pips Lost:** `-{pips:.1f} Pips`\n"
+                elif outcome == "Breakeven":
+                    msg += f"🛡️ **Pips:** `0.0 Pips`\n"
                 msg += f"━━━━━━━━━━━━━━━━━━\n"
                 if outcome == "Loss":
                     msg += f"Better luck next time! 😔\n"
@@ -883,6 +924,9 @@ async def check_active_trades(context: ContextTypes.DEFAULT_TYPE):
                 msg += f"🔸 **Pair:** {base_msg_info}\n"
                 msg += f"🔸 **Final Target:** `{t['t3']}`\n"
                 msg += f"🔸 **Current Price:** `{current_price}`\n"
+                pip_size_t3 = get_pip_size(t['symbol'], t['entry_price'])
+                pips_t3 = (t['t3'] - t['entry_price'] if t['is_long'] else t['entry_price'] - t['t3']) / pip_size_t3
+                msg += f"🎯 **Pips Won:** `+{pips_t3:.1f} Pips`\n"
                 msg += f"━━━━━━━━━━━━━━━━━━\n"
                 msg += f"❓ Do you want to close this trade or keep it open?\n"
                 msg += f"⏰ {get_current_time_str()}"
@@ -904,6 +948,9 @@ async def check_active_trades(context: ContextTypes.DEFAULT_TYPE):
                 msg += f"🔸 **Pair:** {base_msg_info}\n"
                 msg += f"🔸 **Target Reached:** `{t['t2']}`\n"
                 msg += f"🔸 **Current Price:** `{current_price}`\n"
+                pip_size_t2 = get_pip_size(t['symbol'], t['entry_price'])
+                pips_t2 = (t['t2'] - t['entry_price'] if t['is_long'] else t['entry_price'] - t['t2']) / pip_size_t2
+                msg += f"🎯 **Pips Secured:** `+{pips_t2:.1f} Pips`\n"
                 msg += f"━━━━━━━━━━━━━━━━━━\n"
                 msg += f"⏰ {get_current_time_str()}"
 
@@ -918,6 +965,9 @@ async def check_active_trades(context: ContextTypes.DEFAULT_TYPE):
                 msg += f"🔸 **Pair:** {base_msg_info}\n"
                 msg += f"🔸 **Target Reached:** `{t['t1']}`\n"
                 msg += f"🔸 **Current Price:** `{current_price}`\n"
+                pip_size_t1 = get_pip_size(t['symbol'], t['entry_price'])
+                pips_t1 = (t['t1'] - t['entry_price'] if t['is_long'] else t['entry_price'] - t['t1']) / pip_size_t1
+                msg += f"🎯 **Pips Secured:** `+{pips_t1:.1f} Pips`\n"
                 msg += f"━━━━━━━━━━━━━━━━━━\n"
                 msg += f"⏰ {get_current_time_str()}"
 
@@ -1171,6 +1221,7 @@ def setup_bot():
     application.add_handler(CommandHandler('mytrades', mytrades_command))
     application.add_handler(CommandHandler('deletetrade', deletetrade_command))
     application.add_handler(CommandHandler('stats', stats_command))
+    application.add_handler(CommandHandler('pipcalc', pipcalc_command))
     application.add_handler(CommandHandler('adduser', adduser_command))
     application.add_handler(CommandHandler('removeuser', removeuser_command))
     application.add_handler(CommandHandler('users', users_command))
