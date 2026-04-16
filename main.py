@@ -126,6 +126,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "🔹 `/list` - View your active alerts list\n"
             "🔹 `/deletealert <id>` - Delete manual alert\n"
             "🔹 `/tracktrade` - Track RR targets (e.g `/tracktrade BTC 65000 64000`)\n"
+            "🔹 `/limitentry` - Pending Limit Trade (e.g `/limitentry BTC 65000 64000`)\n"
             "🔹 `/mytrades` - View tracked trades\n"
             "🔹 `/deletetrade <id>` - Remove tracked trade\n"
             "🔹 `/session` - Live Forex trading sessions\n"
@@ -301,6 +302,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text(text=f"🗑️ **Trade #{trade_id}** has been deleted.", parse_mode='Markdown')
         else:
             await query.answer("❌ You cannot delete this trade.", show_alert=True)
+        return
+
+    if data.startswith('trade_keep_'):
+        trade_id = int(data.replace('trade_keep_', ''))
+        await query.edit_message_text(text=f"✅ You chose to keep Trade #{trade_id} open. Its tracker will remain active for current targets.", parse_mode='Markdown')
         return
 
 async def spot_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -636,6 +642,52 @@ async def tracktrade_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     
     await update.message.reply_text(msg, parse_mode='Markdown')
 
+async def limitentry_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if len(context.args) < 3:
+        await update.message.reply_text("ℹ️ Usage: /limitentry <symbol> <entry_price> <stop_loss>\nExample: /limitentry BTCUSDT 65000 64000")
+        return
+        
+    symbol = context.args[0].upper()
+    try:
+        entry_price = float(context.args[1])
+        stop_loss = float(context.args[2])
+    except ValueError:
+        await update.message.reply_text("❌ Entry price and stop loss must be valid numbers.")
+        return
+        
+    if entry_price == stop_loss:
+        await update.message.reply_text("❌ Entry price and stop loss cannot be the same.")
+        return
+        
+    current_price, _, resolved_symbol = get_price(symbol)
+    if current_price is None:
+        await update.message.reply_text(f"❌ Could not fetch price for {symbol}. Make sure it is a valid crypto or forex ticker.")
+        return
+        
+    limit_condition = 'above' if entry_price > current_price else 'below'
+    
+    user_name = update.effective_user.first_name
+    trade_id, trade = trade_engine.add_trade(update.message.chat_id, user_name, resolved_symbol, entry_price, stop_loss, status='pending', limit_condition=limit_condition)
+    
+    position_type = "🟢 LONG" if trade['is_long'] else "🔴 SHORT"
+    
+    msg = f"⏳ **LIMIT ORDER CREATED!** ⏳\n"
+    msg += f"━━━━━━━━━━━━━━━━━━\n"
+    msg += f"🔸 **Pair:** `{resolved_symbol}`\n"
+    msg += f"🔸 **Position:** {position_type}\n"
+    msg += f"🔸 **Limit Entry:** `{entry_price}`\n"
+    msg += f"🔸 **Stop Loss:** `{stop_loss}`\n"
+    msg += f"━━━━━━━━━━━━━━━━━━\n"
+    msg += f"🎯 **AUTO-CALCULATED TARGETS**\n"
+    msg += f"✅ **Target 1 (1:1.5 RR):** `{trade['t1']}`\n"
+    msg += f"✅ **Target 2 (1:2.0 RR):** `{trade['t2']}`\n"
+    msg += f"🚀 **Target 3 (1:3.0 RR):** `{trade['t3']}`\n"
+    msg += f"━━━━━━━━━━━━━━━━━━\n"
+    msg += f"📉 _Current price is `{current_price}`. Engine will activate when price hits entry._\n"
+    msg += f"⏰ {get_current_time_str()}"
+    
+    await update.message.reply_text(msg, parse_mode='Markdown')
+
 async def mytrades_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     trades = trade_engine.get_user_trades(update.message.chat_id)
     if not trades:
@@ -650,12 +702,13 @@ async def mytrades_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     for t in trades:
+        status_tag = "⏳ PENDING" if t.get('status', 'active') == 'pending' else "🔥 ACTIVE"
         ptype = "🟢 LONG" if t['is_long'] else "🔴 SHORT"
         t1_status = "✅" if t['t1_hit'] else "⏳"
         t2_status = "✅" if t['t2_hit'] else "⏳"
 
         card = (
-            f"🔸 **Trade #{t['id']}** — `{t['symbol']}`\n"
+            f"🔸 **Trade #{t['id']}** — `{t['symbol']}` [{status_tag}]\n"
             f"📌 {ptype} @ `{t['entry_price']}`\n"
             f"🛑 Stop Loss: `{t['stop_loss']}`\n"
             f"{t1_status} T1: `{round(t['t1'], 4)}`   "
@@ -703,6 +756,20 @@ async def check_active_trades(context: ContextTypes.DEFAULT_TYPE):
         if current_price is None:
             continue
             
+        a_user = t.get('user_name', 'Unknown')
+        base_msg_info = f"`{t['symbol']}` ({'LONG' if t['is_long'] else 'SHORT'})"
+
+        if t.get('status', 'active') == 'pending':
+            if t.get('limit_condition') == 'above' and current_price >= t['entry_price']:
+                trade_engine.update_trade_status(t['id'], 'active')
+                import asyncio
+                asyncio.create_task(context.bot.send_message(chat_id=t['chat_id'], text=f"🔔 **LIMIT ORDER ACTIVATED!**\nYour {base_msg_info} trade has triggered at entry price `{t['entry_price']}`.", parse_mode='Markdown'))
+            elif t.get('limit_condition') == 'below' and current_price <= t['entry_price']:
+                trade_engine.update_trade_status(t['id'], 'active')
+                import asyncio
+                asyncio.create_task(context.bot.send_message(chat_id=t['chat_id'], text=f"🔔 **LIMIT ORDER ACTIVATED!**\nYour {base_msg_info} trade has triggered at entry price `{t['entry_price']}`.", parse_mode='Markdown'))
+            continue
+
         sl_hit = False
         t1_new_hit = False
         t2_new_hit = False
@@ -710,17 +777,14 @@ async def check_active_trades(context: ContextTypes.DEFAULT_TYPE):
         
         if t['is_long']:
             if current_price <= t['stop_loss']: sl_hit = True
-            if current_price >= t['t3']: t3_new_hit = True
+            if current_price >= t['t3'] and not t.get('t3_hit'): t3_new_hit = True
             elif current_price >= t['t2'] and not t['t2_hit']: t2_new_hit = True
             elif current_price >= t['t1'] and not t['t1_hit']: t1_new_hit = True
         else:
             if current_price >= t['stop_loss']: sl_hit = True
-            if current_price <= t['t3']: t3_new_hit = True
+            if current_price <= t['t3'] and not t.get('t3_hit'): t3_new_hit = True
             elif current_price <= t['t2'] and not t['t2_hit']: t2_new_hit = True
             elif current_price <= t['t1'] and not t['t1_hit']: t1_new_hit = True
-            
-        a_user = t.get('user_name', 'Unknown')
-        base_msg_info = f"`{t['symbol']}` ({'LONG' if t['is_long'] else 'SHORT'})"
         
         try:
             if sl_hit:
@@ -746,11 +810,17 @@ async def check_active_trades(context: ContextTypes.DEFAULT_TYPE):
                 msg += f"🔸 **Final Target:** `{t['t3']}`\n"
                 msg += f"🔸 **Current Price:** `{current_price}`\n"
                 msg += f"━━━━━━━━━━━━━━━━━━\n"
-                msg += f"_Tracker auto-closed. Enjoy your gains!_\n"
+                msg += f"❓ Do you want to close this trade or keep it open?\n"
                 msg += f"⏰ {get_current_time_str()}"
 
-                await context.bot.send_message(chat_id=t['chat_id'], text=msg, parse_mode='Markdown')
-                trade_engine.remove_trade(t['id'])
+                keyboard = [
+                    [
+                        InlineKeyboardButton("🗑️ Close Trade", callback_data=f"trade_delete_{t['id']}"),
+                        InlineKeyboardButton("✅ Keep Open", callback_data=f"trade_keep_{t['id']}")
+                    ]
+                ]
+                await context.bot.send_message(chat_id=t['chat_id'], text=msg, parse_mode='Markdown', reply_markup=InlineKeyboardMarkup(keyboard))
+                trade_engine.update_trade_target_hit(t['id'], 3)
                 continue
                 
             if t2_new_hit:
@@ -760,13 +830,12 @@ async def check_active_trades(context: ContextTypes.DEFAULT_TYPE):
                 msg += f"🔸 **Pair:** {base_msg_info}\n"
                 msg += f"🔸 **Target Reached:** `{t['t2']}`\n"
                 msg += f"🔸 **Current Price:** `{current_price}`\n"
-                msg += f"🔒 **Stop Loss Moved to T1:** `{t['t1']}`\n"
+                msg += f"🔒 **Stop Loss is set to Breakeven** `{t['t1']}`\n"
                 msg += f"━━━━━━━━━━━━━━━━━━\n"
                 msg += f"⏰ {get_current_time_str()}"
 
                 await context.bot.send_message(chat_id=t['chat_id'], text=msg, parse_mode='Markdown')
                 trade_engine.update_trade_target_hit(t['id'], 2)
-                trade_engine.update_trade_sl(t['id'], t['t1'])
                 t['t2_hit'] = True 
                 
             if t1_new_hit and not t['t1_hit']: 
@@ -1027,6 +1096,7 @@ def setup_bot():
     application.add_handler(CommandHandler('deletealert', deletealert_command))
     application.add_handler(CommandHandler('list', list_command))
     application.add_handler(CommandHandler('tracktrade', tracktrade_command))
+    application.add_handler(CommandHandler('limitentry', limitentry_command))
     application.add_handler(CommandHandler('mytrades', mytrades_command))
     application.add_handler(CommandHandler('deletetrade', deletetrade_command))
     application.add_handler(CommandHandler('adduser', adduser_command))

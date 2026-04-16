@@ -24,7 +24,7 @@ def save_trades(trades):
     with open(TRADES_FILE, 'w') as f:
         json.dump(trades, f)
 
-def add_trade(chat_id, user_name, symbol, entry_price, stop_loss):
+def add_trade(chat_id, user_name, symbol, entry_price, stop_loss, status='active', limit_condition=None):
     trades = load_trades()
     max_id = max([t['id'] for t in trades], default=0)
     trade_id = max_id + 1
@@ -54,7 +54,10 @@ def add_trade(chat_id, user_name, symbol, entry_price, stop_loss):
         't2': t2,
         't3': t3,
         't1_hit': False,
-        't2_hit': False
+        't2_hit': False,
+        't3_hit': False,
+        'status': status,
+        'limit_condition': limit_condition
     }
     
     trades.append(new_trade)
@@ -79,6 +82,10 @@ def update_trade_target_hit(trade_id, target_level):
             elif target_level == 2:
                 t['t1_hit'] = True
                 t['t2_hit'] = True
+            elif target_level == 3:
+                t['t1_hit'] = True
+                t['t2_hit'] = True
+                t['t3_hit'] = True
             break
     save_trades(trades)
 
@@ -87,5 +94,13 @@ def update_trade_sl(trade_id, new_sl):
     for t in trades:
         if t['id'] == trade_id:
             t['stop_loss'] = new_sl
+            break
+    save_trades(trades)
+
+def update_trade_status(trade_id, status):
+    trades = load_trades()
+    for t in trades:
+        if t['id'] == trade_id:
+            t['status'] = status
             break
     save_trades(trades)
