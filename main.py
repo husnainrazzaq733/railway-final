@@ -321,6 +321,43 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(text=f"✅ You chose to keep Trade #{trade_id} open. Its tracker will remain active for current targets.", parse_mode='Markdown')
         return
 
+    if data.startswith('pipcalclive_'):
+        parts = data.split('_')
+        if len(parts) >= 3:
+            symbol = parts[1]
+            price1 = float(parts[2])
+            
+            await query.edit_message_text(text="⏳ Fetching live price...")
+            current_price, _, resolved_symbol = get_price(symbol)
+            if current_price is None:
+                await query.edit_message_text(text=f"❌ Could not fetch live price for {symbol}.")
+                return
+                
+            price2 = current_price
+            diff = price2 - price1
+            pip_size = get_pip_size(resolved_symbol, price1)
+            pips = abs(diff) / pip_size
+            
+            if diff > 0:
+                dir_text = "📈 UP"
+            elif diff < 0:
+                dir_text = "📉 DOWN"
+            else:
+                dir_text = "➖ NO CHANGE"
+                
+            msg = f"🧮 **Pips Calculator (Live Price)**\n"
+            msg += f"━━━━━━━━━━━━━━━━━━\n"
+            msg += f"🪙 **Symbol:** `{resolved_symbol}`\n"
+            msg += f"🔸 **Entry:** `{price1}`\n"
+            msg += f"🔸 **Live Exit:** `{price2}`\n"
+            msg += f"━━━━━━━━━━━━━━━━━━\n"
+            msg += f"📏 **Difference:** `{abs(diff):.4f}` ({dir_text})\n"
+            msg += f"🎯 **Total Pips:** `{pips:.1f} Pips`\n"
+            msg += f"⏰ {get_current_time_str()}"
+            
+            await query.edit_message_text(text=msg, parse_mode='Markdown')
+        return
+
 async def spot_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text("ℹ️ Usage: /spotprice <symbol>\nExample: /spotprice BTC")
@@ -685,8 +722,20 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg, parse_mode='Markdown')
 
 async def pipcalc_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if len(context.args) == 2:
+        symbol = context.args[0].upper()
+        try:
+            price1 = float(context.args[1])
+        except ValueError:
+            await update.message.reply_text("❌ Price must be a valid number.")
+            return
+            
+        markup = InlineKeyboardMarkup([[InlineKeyboardButton("📊 Calculate with Live Price", callback_data=f"pipcalclive_{symbol}_{price1}")]])
+        await update.message.reply_text(f"❓ Aap ne sirf Entry Price (`{price1}`) di hai.\n\nLive Market Price ke sath pips calculate karne ke liye neechay button dabayein. Ya phir poori command likhein:\n`/pipcalc {symbol} {price1} <Target_Price>`", reply_markup=markup)
+        return
+        
     if len(context.args) < 3:
-        await update.message.reply_text("ℹ️ Usage: /pipcalc <symbol> <entry_price> <exit_price>\nExample: /pipcalc BTCUSDT 65000 66000")
+        await update.message.reply_text("ℹ️ Usage: /pipcalc <symbol> <entry_price> [exit_price]\nExample: /pipcalc BTCUSDT 65000 66000\nOr just: /pipcalc BTCUSDT 65000")
         return
         
     symbol = context.args[0].upper()
