@@ -86,12 +86,31 @@ async def auth_middleware(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return # Allow this interaction to continue!
         
     if not is_allowed:
+        # Allow /start command to reach its handler even if not authorized
         if update.message and update.message.text and update.message.text.startswith('/start'):
-            # Only reply to start so we don't spam them on every message
-            await update.message.reply_text(f"⛔ **Unauthorized**\nYou do not have permission to use this bot.\nIf you know the owner, give them your Chat ID: `{chat_id}`", parse_mode='Markdown')
+            return
+            
+        # Allow CallbackQueries (for Request Access buttons)
+        if update.callback_query:
+            return
+            
+        # Block everything else for unauthorized users
         raise ApplicationHandlerStop()
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_user.id
+    is_allowed, _ = auth.check_and_authorize(chat_id)
+    
+    if not is_allowed:
+        keyboard = [[InlineKeyboardButton("📩 Request Access", callback_data='req_access')]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text(
+            f"⛔ **Unauthorized**\nYou do not have permission to use this bot.\n\nYour Chat ID is `{chat_id}`.\nClick the button below to send a request to the owner.",
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
+        return
+
     reply_keyboard = [[KeyboardButton("🛠️ Show All Commands")]]
     reply_markup_persistent = ReplyKeyboardMarkup(reply_keyboard, resize_keyboard=True)
     
@@ -159,6 +178,73 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     
     data = query.data
+    
+    if data == 'req_access':
+        owner_id = auth.get_auth_data().get("owner")
+        if not owner_id:
+            await query.answer("System Error: No owner found!")
+            return
+            
+        user = update.effective_user
+        user_name = user.first_name if user.first_name else "User"
+        chat_id = user.id
+        
+        # Notify owner
+        keyboard = [[
+            InlineKeyboardButton("✅ Approve", callback_data=f"approve_user_{chat_id}"),
+            InlineKeyboardButton("❌ Reject", callback_data=f"reject_user_{chat_id}")
+        ]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        try:
+            await context.bot.send_message(
+                chat_id=owner_id,
+                text=f"🔔 **Access Request**\n\n👤 **Name:** {user_name}\n🆔 **ID:** `{chat_id}`\n\nDo you want to grant access?",
+                reply_markup=reply_markup,
+                parse_mode='Markdown'
+            )
+            await query.edit_message_text("✅ Your request has been sent to the owner. Please wait for approval.")
+        except Exception as e:
+            await query.edit_message_text(f"❌ Failed to send request: {e}")
+        return
+
+    if data.startswith('approve_user_'):
+        if not auth.is_owner(update.effective_user.id):
+            await query.answer("Unauthorized!", show_alert=True)
+            return
+            
+        target_id = int(data.replace('approve_user_', ''))
+        auth.add_user(target_id)
+        
+        await query.edit_message_text(f"✅ User `{target_id}` has been authorized.")
+        
+        try:
+            await context.bot.send_message(
+                chat_id=target_id,
+                text="🎉 **Request Approved!**\nYour access has been granted. Use `/start` to begin.",
+                parse_mode='Markdown'
+            )
+        except:
+            pass
+        return
+
+    if data.startswith('reject_user_'):
+        if not auth.is_owner(update.effective_user.id):
+            await query.answer("Unauthorized!", show_alert=True)
+            return
+            
+        target_id = int(data.replace('reject_user_', ''))
+        await query.edit_message_text(f"❌ Access request for `{target_id}` rejected.")
+        
+        try:
+            await context.bot.send_message(
+                chat_id=target_id,
+                text="⛔ **Request Rejected**\nYour access request was not approved by the owner.",
+                parse_mode='Markdown'
+            )
+        except:
+            pass
+        return
     
     if data.startswith('scan_market_'):
         market_type = data.replace('scan_market_', '')
