@@ -23,6 +23,9 @@ from rsi_api import get_crypto_rsi, scan_market_rsi_both
 import trade_engine
 import auth
 import session_engine
+from whale_engine import scan_whales
+from social_engine import check_and_get_social_alerts
+from market_scanner import check_volume_spikes, check_funding_rates, check_liquidations
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -163,6 +166,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "🔹 `/pipcalc` - Pips Calculator (e.g `/pipcalc BTC 65000 66000`)\n"
             "🔹 `/session` - Live Forex trading sessions\n"
             "🔹 `/todaynews` - Today's High Impact USD News 📰\n"
+            "🔹 `/huntwhales` - Scan market for big whale orders 🐋\n"
         )
         if auth.is_owner(update.effective_user.id):
             help_text += (
@@ -442,6 +446,27 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             msg += f"⏰ {get_current_time_str()}"
             
             await query.edit_message_text(text=msg, parse_mode='Markdown')
+        return
+
+    if data.startswith('track_whale_'):
+        # Format: track_whale_{symbol}_{side}_{price}
+        parts = data.split('_')
+        symbol = parts[2]
+        side = parts[3]
+        price = float(parts[4])
+        
+        current_price, _, _ = get_price(symbol)
+        if current_price is None:
+            await query.answer("Could not fetch current price!", show_alert=True)
+            return
+            
+        condition = 'above' if price > current_price else 'below'
+        user_name = query.from_user.first_name
+        
+        add_alert(query.message.chat_id, user_name, symbol, price, condition)
+        
+        await query.answer(f"✅ Alert set for {symbol} at {price}!", show_alert=True)
+        await query.edit_message_text(text=query.message.text + f"\n\n🔔 **Alert Set:** `{symbol}` @ `{price}`", parse_mode='Markdown')
         return
 
 async def spot_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1328,6 +1353,120 @@ async def todaynews_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text(text, parse_mode='Markdown')
 
+async def huntwhales_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    threshold = 1000000 # $1M default
+    if context.args:
+        try:
+            threshold = float(context.args[0])
+            if threshold < 10000: # min 10k
+                threshold = 10000
+        except ValueError:
+            pass
+            
+    await update.message.reply_text(f"🐋 **Hunting for Whales...**\nScanning top 500 coins for orders > `${threshold:,.0f}`\n(This will take ~20-30 seconds)\nThis may take a few seconds.")
+    
+    import asyncio
+    loop = asyncio.get_running_loop()
+    # Using 500 coins limit to scan almost the entire market
+    whales = await loop.run_in_executor(None, scan_whales, 'swap', 500, threshold)
+    
+    if not whales:
+        await update.message.reply_text("🌊 The ocean is calm. No whales found with the current threshold.")
+        return
+        
+    text = f"🐋 **Whale Orders Found** (Threshold: `${threshold:,.0f}`)\n\n"
+    
+    # Show top 10 whales to keep message short
+    for w in whales[:10]:
+        side_emoji = "🟢" if w['side'] == 'BUY' else "🔴"
+        text += f"{side_emoji} `{w['symbol']}` {w['side']} @ `{w['price']}`\n"
+        text += f"   💰 Vol: `${w['usd_val']:,.0f}` ({w['multiple']:.1f}x avg)\n\n"
+    
+    text += f"⏰ {get_current_time_str()}"
+    
+    # Add a button for the biggest whale to track easily if there's at least one
+    reply_markup = None
+    if whales:
+        top_w = whales[0]
+        keyboard = [[InlineKeyboardButton(f"🔔 Track {top_w['symbol']} @ {top_w['price']}", callback_data=f"track_whale_{top_w['symbol']}_{top_w['side']}_{top_w['price']}")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+    await update.message.reply_text(text, parse_mode='Markdown', reply_markup=reply_markup)
+
+async def check_social_alerts(context: ContextTypes.DEFAULT_TYPE):
+    alerts = check_and_get_social_alerts()
+    for alert in alerts:
+        # Get all authorized users to notify them
+        # For now, we can just notify the owner or all users in alerts.json? 
+        # Better: notify all authorized users.
+        from auth import get_auth_data
+        auth_data = get_auth_data()
+        all_users = [auth_data.get('owner')] + auth_data.get('users', [])
+        
+        coins_str = f"Coins: {', '.join(alert['currencies'])}" if alert['currencies'] else ""
+        message = (
+            f"🔥 **BREAKING SOCIAL ALERT** 🔥\n\n"
+            f"📢 **{alert['title']}**\n\n"
+            f"🏛 **Source:** {alert['source']}\n"
+            f"{coins_str}\n\n"
+            f"🔗 [Read Full Post]({alert['url']})"
+        )
+        
+        for user_id in all_users:
+            if not user_id: continue
+            try:
+                await context.bot.send_message(chat_id=user_id, text=message, parse_mode='Markdown')
+            except Exception as e:
+                logging.error(f"Failed to send social alert to {user_id}: {e}")
+
+async def check_market_scanners(context: ContextTypes.DEFAULT_TYPE):
+    """Job to check for liquidations and volume spikes."""
+    # 1. Check Liquidations
+    liqs = check_liquidations()
+    if liqs:
+        from auth import get_auth_data
+        auth_data = get_auth_data()
+        all_users = [auth_data.get('owner')] + auth_data.get('users', [])
+        for l in liqs:
+            type_str = "🔴 LONG REKT" if l['side'] == 'SELL' else "🟢 SHORT REKT"
+            msg = f"💥 **LIQUIDATION ALERT** 💥\n\n🪙 **{l['symbol']}**\n📌 **Type:** {type_str}\n💰 **Amount:** `${l['usd_val']:,.0f}`\n🎯 **Price:** `{l['price']}`"
+            for user_id in all_users:
+                if user_id: 
+                    try: await context.bot.send_message(chat_id=user_id, text=msg, parse_mode='Markdown')
+                    except: pass
+
+    # 2. Check Volume Spikes
+    spikes = check_volume_spikes()
+    if spikes:
+        from auth import get_auth_data
+        auth_data = get_auth_data()
+        all_users = [auth_data.get('owner')] + auth_data.get('users', [])
+        for s in spikes:
+            msg = f"🚀 **VOLUME SPIKE (MOON HUNT)** 🚀\n\n🪙 **{s['symbol']}**\n📈 **Increase:** `+{s['increase_pct']}%`\n💰 **New Vol:** `${s['increase_usd']:,.0f}`\n🎯 **Price:** `{s['price']}`\n\n_Potential Pump detected in last few minutes!_"
+            for user_id in all_users:
+                if user_id: 
+                    try: await context.bot.send_message(chat_id=user_id, text=msg, parse_mode='Markdown')
+                    except: pass
+
+async def check_funding_job(context: ContextTypes.DEFAULT_TYPE):
+    """Job to check for extreme funding rates."""
+    extreme = check_funding_rates()
+    if extreme:
+        from auth import get_auth_data
+        auth_data = get_auth_data()
+        all_users = [auth_data.get('owner')] + auth_data.get('users', [])
+        text = "📉 **EXTREME FUNDING RATES** 📉\n\n"
+        for item in extreme:
+            emoji = "🔴" if item['rate'] > 0 else "🟢"
+            text += f"{emoji} `{item['symbol']}` : **{item['rate']}%**\n"
+            text += f"   ⚠️ **Risk:** {item['risk']} | 🔄 **Reversal Prob:** `{item['probability']}`\n\n"
+        
+        text += "_High rates usually lead to price reversals!_"
+        for user_id in all_users:
+            if user_id: 
+                try: await context.bot.send_message(chat_id=user_id, text=text, parse_mode='Markdown')
+                except: pass
+
 def setup_bot():
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
     if not token:
@@ -1362,6 +1501,7 @@ def setup_bot():
     application.add_handler(CommandHandler('users', users_command))
     application.add_handler(CommandHandler('session', session_command))
     application.add_handler(CommandHandler('todaynews', todaynews_command))
+    application.add_handler(CommandHandler('huntwhales', huntwhales_command))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
     application.add_handler(CallbackQueryHandler(button_handler))
     
@@ -1371,6 +1511,9 @@ def setup_bot():
     job_queue.run_repeating(notify_sessions, interval=60, first=5)
     job_queue.run_repeating(check_news_alerts, interval=900, first=20)
     job_queue.run_repeating(check_live_news_alerts, interval=60, first=30)
+    job_queue.run_repeating(check_social_alerts, interval=60, first=40)
+    job_queue.run_repeating(check_market_scanners, interval=45, first=50) # Liq & Vol
+    job_queue.run_repeating(check_funding_job, interval=1800, first=60) # Funding every 30m
     
     return application
 
