@@ -164,3 +164,53 @@ def check_liquidations():
     except Exception as e:
         print(f"Error checking liqs: {e}")
     return []
+
+def get_symbol_liquidations(symbol):
+    """
+    Summarize recent liquidations for a specific symbol to find clusters.
+    """
+    try:
+        # Fetch last 500 liquidations for this symbol
+        url = f"https://fapi.binance.com/fapi/v1/allForceOrders?symbol={symbol}&limit=500"
+        res = requests.get(url, timeout=10)
+        if res.status_code == 200:
+            data = res.json()
+            if not data: return None
+            
+            long_liq_vol = 0
+            short_liq_vol = 0
+            clusters = {} # Price rounded to 0.5% or similar
+            
+            for liq in data:
+                price = float(liq['price'])
+                qty = float(liq['origQty'])
+                usd_val = price * qty
+                
+                if liq['side'] == 'SELL':
+                    long_liq_vol += usd_val
+                else:
+                    short_liq_vol += usd_val
+                
+                # Cluster prices (round to nearest significant level)
+                # For high price coins, round to 10s, for low price round to 0.001s
+                if price > 1000:
+                    cluster_price = round(price / 10) * 10
+                elif price > 10:
+                    cluster_price = round(price, 1)
+                else:
+                    cluster_price = round(price, 3)
+                    
+                clusters[cluster_price] = clusters.get(cluster_price, 0) + usd_val
+
+            # Find top 3 clusters
+            sorted_clusters = sorted(clusters.items(), key=lambda x: x[1], reverse=True)
+            
+            return {
+                'symbol': symbol,
+                'long_vol': round(long_liq_vol, 2),
+                'short_vol': round(short_liq_vol, 2),
+                'top_clusters': sorted_clusters[:3]
+            }
+    except:
+        pass
+    return None

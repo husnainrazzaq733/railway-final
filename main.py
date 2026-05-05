@@ -167,6 +167,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "🔹 `/session` - Live Forex trading sessions\n"
             "🔹 `/todaynews` - Today's High Impact USD News 📰\n"
             "🔹 `/huntwhales` - Scan market for big whale orders 🐋\n"
+            "🔹 `/liq <symbol>` - Check liquidation clusters for a coin 💥\n"
         )
         if auth.is_owner(update.effective_user.id):
             help_text += (
@@ -1393,6 +1394,36 @@ async def huntwhales_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         
     await update.message.reply_text(text, parse_mode='Markdown', reply_markup=reply_markup)
 
+async def liq_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("ℹ️ Usage: /liq <symbol>\nExample: /liq BTC")
+        return
+        
+    base_symbol = context.args[0].upper()
+    symbol = base_symbol if base_symbol.endswith("USDT") else base_symbol + "USDT"
+    
+    await update.message.reply_text(f"⏳ Analyzing recent liquidation data for `{symbol}`...")
+    
+    from market_scanner import get_symbol_liquidations
+    data = get_symbol_liquidations(symbol)
+    
+    if not data:
+        await update.message.reply_text(f"ℹ️ No recent large liquidations found for `{symbol}` in the last batch.")
+        return
+        
+    text = f"💥 **Liquidation Analysis: {symbol}** 💥\n\n"
+    text += f"🔴 **Total Longs Rekt:** `${data['long_vol']:,.0f}`\n"
+    text += f"🟢 **Total Shorts Rekt:** `${data['short_vol']:,.0f}`\n\n"
+    
+    text += f"📍 **Top Liquidation Clusters (Price Levels):**\n"
+    for price, vol in data['top_clusters']:
+        text += f"▪️ `{price}` : `${vol:,.0f}`\n"
+        
+    text += f"\n_Note: Clusters show where the most volume was liquidated recently._\n"
+    text += f"⏰ {get_current_time_str()}"
+    
+    await update.message.reply_text(text, parse_mode='Markdown')
+
 async def check_social_alerts(context: ContextTypes.DEFAULT_TYPE):
     alerts = check_and_get_social_alerts()
     for alert in alerts:
@@ -1502,6 +1533,7 @@ def setup_bot():
     application.add_handler(CommandHandler('session', session_command))
     application.add_handler(CommandHandler('todaynews', todaynews_command))
     application.add_handler(CommandHandler('huntwhales', huntwhales_command))
+    application.add_handler(CommandHandler('liq', liq_command))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
     application.add_handler(CallbackQueryHandler(button_handler))
     
