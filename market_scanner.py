@@ -214,3 +214,31 @@ def get_symbol_liquidations(symbol):
     except:
         pass
     return None
+
+def get_top_liquidations():
+    """
+    Scan global liquidations and find which coins have the most volume liquidated recently.
+    """
+    try:
+        # Fetch a large batch of recent liquidations
+        url = "https://fapi.binance.com/fapi/v1/allForceOrders?limit=1000"
+        res = requests.get(url, timeout=10)
+        if res.status_code == 200:
+            data = res.json()
+            if not data: return []
+            
+            symbol_vols = {}
+            for liq in data:
+                sym = liq['symbol']
+                price = float(liq['price'])
+                qty = float(liq['origQty'])
+                usd_val = price * qty
+                
+                symbol_vols[sym] = symbol_vols.get(sym, 0) + usd_val
+            
+            # Sort by volume descending
+            sorted_vols = sorted(symbol_vols.items(), key=lambda x: x[1], reverse=True)
+            return sorted_vols[:10] # Top 10
+    except:
+        pass
+    return []

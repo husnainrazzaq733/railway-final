@@ -168,6 +168,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "🔹 `/todaynews` - Today's High Impact USD News 📰\n"
             "🔹 `/huntwhales` - Scan market for big whale orders 🐋\n"
             "🔹 `/liq <symbol>` - Check liquidation clusters for a coin 💥\n"
+            "🔹 `/liquid` - Top liquidated coins in the market 🔥\n"
         )
         if auth.is_owner(update.effective_user.id):
             help_text += (
@@ -1424,6 +1425,26 @@ async def liq_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text(text, parse_mode='Markdown')
 
+async def liquid_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("⏳ Scanning global liquidation data (Top 1000 orders)...")
+    
+    from market_scanner import get_top_liquidations
+    top_liqs = get_top_liquidations()
+    
+    if not top_liqs:
+        await update.message.reply_text("ℹ️ No significant liquidations found in the last batch.")
+        return
+        
+    text = "🔥 **Top Liquidated Coins (Last Batch)** 🔥\n\n"
+    for i, (sym, vol) in enumerate(top_liqs, 1):
+        medal = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else "🔹"
+        text += f"{medal} **{sym}**: `${vol:,.0f}`\n"
+        
+    text += f"\n⏰ {get_current_time_str()}\n"
+    text += "_Use /liq <symbol> for more details on a specific coin._"
+    
+    await update.message.reply_text(text, parse_mode='Markdown')
+
 async def check_social_alerts(context: ContextTypes.DEFAULT_TYPE):
     alerts = check_and_get_social_alerts()
     for alert in alerts:
@@ -1534,6 +1555,7 @@ def setup_bot():
     application.add_handler(CommandHandler('todaynews', todaynews_command))
     application.add_handler(CommandHandler('huntwhales', huntwhales_command))
     application.add_handler(CommandHandler('liq', liq_command))
+    application.add_handler(CommandHandler('liquid', liquid_command))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
     application.add_handler(CallbackQueryHandler(button_handler))
     
