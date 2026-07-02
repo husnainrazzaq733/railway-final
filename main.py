@@ -417,7 +417,7 @@ async def forex_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def setspot_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(context.args) < 2:
-        await update.message.reply_text("ℹ️ Usage: /setspotalert <symbol> <target_price>\nExample: /setspotalert BTC 65000")
+        await update.message.reply_text("ℹ️ Usage: /setspotalert <symbol> <target_price> [reason]\nExample: /setspotalert BTC 65000")
         return
         
     base_symbol = context.args[0].upper()
@@ -427,6 +427,7 @@ async def setspot_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Target price must be a valid number.")
         return
         
+    reason = " ".join(context.args[2:]) if len(context.args) > 2 else ""
     symbol = base_symbol if base_symbol.endswith("USDT") else base_symbol + "USDT"
     current_price = get_spot_price(symbol)
     
@@ -436,12 +437,13 @@ async def setspot_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     condition = 'above' if target_price > current_price else 'below'
     user_name = update.effective_user.first_name
-    add_alert(update.message.chat_id, user_name, symbol, target_price, condition)
-    await update.message.reply_text(f"✅ Spot Alert set by **{user_name}**! I will notify when `{symbol}` (Spot) goes **{condition.upper()}** {target_price}.\n\n(Current price is {current_price})\n⏰ Time: {get_current_time_str()}", parse_mode='Markdown')
+    add_alert(update.message.chat_id, user_name, symbol, target_price, condition, reason)
+    reason_txt = f"\n📝 **Reason:** {reason}" if reason else ""
+    await update.message.reply_text(f"✅ Spot Alert set by **{user_name}**! I will notify when `{symbol}` (Spot) goes **{condition.upper()}** {target_price}.{reason_txt}\n\n(Current price is {current_price})\n⏰ Time: {get_current_time_str()}", parse_mode='Markdown')
 
 async def setswap_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(context.args) < 2:
-        await update.message.reply_text("ℹ️ Usage: /setswapalert <symbol> <target_price>\nExample: /setswapalert BTC 65000")
+        await update.message.reply_text("ℹ️ Usage: /setswapalert <symbol> <target_price> [reason]\nExample: /setswapalert BTC 65000")
         return
         
     base_symbol = context.args[0].upper()
@@ -451,6 +453,7 @@ async def setswap_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Target price must be a valid number.")
         return
         
+    reason = " ".join(context.args[2:]) if len(context.args) > 2 else ""
     symbol = base_symbol if base_symbol.endswith("USDT") else base_symbol + "USDT"
     current_price = get_swap_price(symbol)
     
@@ -460,12 +463,13 @@ async def setswap_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     condition = 'above' if target_price > current_price else 'below'
     user_name = update.effective_user.first_name
-    add_alert(update.message.chat_id, user_name, symbol, target_price, condition)
-    await update.message.reply_text(f"✅ Swap Alert set by **{user_name}**! I will notify when `{symbol}` (Swap) goes **{condition.upper()}** {target_price}.\n\n(Current price is {current_price})\n⏰ Time: {get_current_time_str()}", parse_mode='Markdown')
+    add_alert(update.message.chat_id, user_name, symbol, target_price, condition, reason)
+    reason_txt = f"\n📝 **Reason:** {reason}" if reason else ""
+    await update.message.reply_text(f"✅ Swap Alert set by **{user_name}**! I will notify when `{symbol}` (Swap) goes **{condition.upper()}** {target_price}.{reason_txt}\n\n(Current price is {current_price})\n⏰ Time: {get_current_time_str()}", parse_mode='Markdown')
 
 async def setforex_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(context.args) < 2:
-        await update.message.reply_text("ℹ️ Usage: /setforexalert <symbol> <target_price>\nExample: /setforexalert EUR 1.10")
+        await update.message.reply_text("ℹ️ Usage: /setforexalert <symbol> <target_price> [reason]\nExample: /setforexalert EUR 1.10")
         return
         
     base_symbol = context.args[0].upper().replace("/", "")
@@ -475,6 +479,7 @@ async def setforex_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Target price must be a valid number.")
         return
         
+    reason = " ".join(context.args[2:]) if len(context.args) > 2 else ""
     if len(base_symbol) == 3 and "=" not in base_symbol:
         symbol = base_symbol + "USD=X"
     elif "=" not in base_symbol:
@@ -494,8 +499,9 @@ async def setforex_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         display = display[:3] + "/" + display[3:]
         
     user_name = update.effective_user.first_name
-    add_alert(update.message.chat_id, user_name, symbol, target_price, condition)
-    await update.message.reply_text(f"✅ Forex Alert set by **{user_name}**! I will notify when `{display}` goes **{condition.upper()}** {target_price}.\n\n(Current price is {current_price})\n⏰ Time: {get_current_time_str()}", parse_mode='Markdown')
+    add_alert(update.message.chat_id, user_name, symbol, target_price, condition, reason)
+    reason_txt = f"\n📝 **Reason:** {reason}" if reason else ""
+    await update.message.reply_text(f"✅ Forex Alert set by **{user_name}**! I will notify when `{display}` goes **{condition.upper()}** {target_price}.{reason_txt}\n\n(Current price is {current_price})\n⏰ Time: {get_current_time_str()}", parse_mode='Markdown')
 
 async def gold_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     symbol = "XAUUSD=X"
@@ -511,7 +517,7 @@ async def gold_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def setgold_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(context.args) < 1:
-        await update.message.reply_text("ℹ️ Usage: /setgoldalert <target_price>\nExample: /setgoldalert 2350.5")
+        await update.message.reply_text("ℹ️ Usage: /setgoldalert <target_price> [reason]\nExample: /setgoldalert 2350.5")
         return
         
     try:
@@ -520,6 +526,7 @@ async def setgold_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Target price must be a valid number.")
         return
         
+    reason = " ".join(context.args[1:]) if len(context.args) > 1 else ""
     symbol = "XAUUSD=X"
     current_price = get_forex_price(symbol)
     
@@ -532,8 +539,9 @@ async def setgold_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     display_symbol = "Gold" 
     # But in alerts.json we must save GC=F so the engine can check it
     user_name = update.effective_user.first_name
-    add_alert(update.message.chat_id, user_name, symbol, target_price, condition)
-    await update.message.reply_text(f"✅ Gold Alert set by **{user_name}**! I will notify when Gold goes **{condition.upper()}** {target_price}.\n\n(Current price is {current_price})\n⏰ Time: {get_current_time_str()}", parse_mode='Markdown')
+    add_alert(update.message.chat_id, user_name, symbol, target_price, condition, reason)
+    reason_txt = f"\n📝 **Reason:** {reason}" if reason else ""
+    await update.message.reply_text(f"✅ Gold Alert set by **{user_name}**! I will notify when Gold goes **{condition.upper()}** {target_price}.{reason_txt}\n\n(Current price is {current_price})\n⏰ Time: {get_current_time_str()}", parse_mode='Markdown')
 
 async def rsi_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
@@ -592,7 +600,8 @@ async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     for a in alerts:
         a_user = a.get('user_name', 'Unknown')
-        text += f"🔹 **ID: {a['id']}** | `{a['symbol']}` -> target **{a['target_price']}** (by {a_user})\n"
+        reason_txt = f" | 📝 {a.get('reason')}" if a.get('reason') else ""
+        text += f"🔹 **ID: {a['id']}** | `{a['symbol']}` -> target **{a['target_price']}** (by {a_user}){reason_txt}\n"
     text += "\n_Use /deletealert <ID> to remove an alert._"
     await update.message.reply_text(text, parse_mode='Markdown')
 
@@ -639,8 +648,10 @@ async def check_alerts(context: ContextTypes.DEFAULT_TYPE):
             # Get current time
             trigger_time = get_current_time_str()
             a_user = alert.get('user_name', 'Unknown')
+            reason = alert.get('reason', '')
+            reason_txt = f"\n📝 **Reason:** {reason}\n" if reason else "\n\n"
             
-            message = f"🚨 {emoji} **PRICE ALERT!** {emoji} 🚨\n\n`{alert['symbol']}` price went **{text}** to **{current_price}**!\n\n*(Alert set by: {a_user})*\n⏰ **Time:** {trigger_time}\n\n_Auto-deleting one-time alert (Target was {alert['target_price']})_"
+            message = f"🚨 {emoji} **PRICE ALERT!** {emoji} 🚨\n\n`{alert['symbol']}` price went **{text}** to **{current_price}**!{reason_txt}*(Alert set by: {a_user})*\n⏰ **Time:** {trigger_time}\n\n_Auto-deleting one-time alert (Target was {alert['target_price']})_"
             try:
                 await context.bot.send_message(chat_id=alert['chat_id'], text=message, parse_mode='Markdown')
                 remove_alert(alert['id'])

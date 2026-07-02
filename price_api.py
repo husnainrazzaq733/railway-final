@@ -10,16 +10,27 @@ def get_swap_price(symbol):
     """
     Fetch Swap (Futures) price from Binance API.
     """
-    try:
-        url = f"https://fapi.binance.com/fapi/v1/ticker/price?symbol={symbol}"
-        response = requests.get(url)
-        if response.status_code == 200:
-            data = response.json()
-            if 'price' in data:
-                return float(data['price'])
-    except Exception as e:
-        print(f"Error fetching swap price for {symbol}: {e}")
-    return None
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+    }
+    def fetch_price(sym):
+        url = f"https://fapi.binance.com/fapi/v1/ticker/price?symbol={sym}"
+        try:
+            response = requests.get(url, headers=headers, timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                if 'price' in data:
+                    return float(data['price'])
+        except Exception as e:
+            print(f"Error fetching swap price for {sym}: {e}")
+        return None
+
+    price = fetch_price(symbol)
+    if price is None:
+        if not symbol.startswith('1000'):
+            price = fetch_price('1000' + symbol)
+            
+    return price
 
 def get_spot_price(symbol):
     """

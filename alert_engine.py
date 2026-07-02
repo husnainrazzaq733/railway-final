@@ -24,7 +24,7 @@ def save_alerts(alerts):
     with open(ALERTS_FILE, 'w') as f:
         json.dump(alerts, f)
 
-def add_alert(chat_id, user_name, symbol, target_price, condition):
+def add_alert(chat_id, user_name, symbol, target_price, condition, reason=""):
     # condition can be 'above' or 'below'
     alerts = load_alerts()
     # Find max id to avoid collisions
@@ -36,7 +36,8 @@ def add_alert(chat_id, user_name, symbol, target_price, condition):
         'symbol': symbol,
         'target_price': target_price,
         'condition': condition,
-        'user_name': user_name
+        'user_name': user_name,
+        'reason': reason
     }
     alerts.append(new_alert)
     save_alerts(alerts)
