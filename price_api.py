@@ -8,29 +8,42 @@ GOLDAPI_KEY = os.getenv("GOLDAPI_KEY", "goldapi-1bfp1smnqr9qyd-io")
 
 def get_swap_price(symbol):
     """
-    Fetch Swap (Futures) price from Binance API.
+    Fetch Swap (Futures) price from MEXC API.
     """
+    import urllib3
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
     }
-    def fetch_price(sym):
-        url = f"https://fapi.binance.com/fapi/v1/ticker/price?symbol={sym}"
-        try:
-            response = requests.get(url, headers=headers, timeout=10)
-            if response.status_code == 200:
-                data = response.json()
-                if 'price' in data:
-                    return float(data['price'])
-        except Exception as e:
-            print(f"Error fetching swap price for {sym}: {e}")
-        return None
+    
+    mexc_symbol = symbol.replace('USDT', '_USDT')
+    if '_USDT' not in mexc_symbol and symbol.endswith('USDT'):
+        mexc_symbol = symbol[:-4] + "_USDT"
+        
+    url = f"https://contract.mexc.com/api/v1/contract/ticker?symbol={mexc_symbol}"
+    
+    try:
+        response = requests.get(url, headers=headers, timeout=10, verify=False)
+        if response.status_code == 200:
+            data = response.json()
+            if data.get('success') and 'data' in data:
+                return float(data['data']['lastPrice'])
+    except Exception as e:
+        print(f"Error fetching MEXC swap price for {symbol}: {e}")
 
-    price = fetch_price(symbol)
-    if price is None:
-        if not symbol.startswith('1000'):
-            price = fetch_price('1000' + symbol)
+    # Fallback to Binance Spot if MEXC fails
+    try:
+        url = f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}"
+        response = requests.get(url, headers=headers, timeout=10, verify=False)
+        if response.status_code == 200:
+            data = response.json()
+            if 'price' in data:
+                return float(data['price'])
+    except Exception:
+        pass
             
-    return price
+    return None
 
 def get_spot_price(symbol):
     """
