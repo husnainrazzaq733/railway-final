@@ -214,7 +214,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data.startswith('price_'):
         symbol = data.split('_', 1)[1]
-        price, domain, resolved_symbol = get_price(symbol)
+        price, domain, resolved_symbol = get_price(symbol, is_manual=True)
         if price:
             rec = ""
             if domain == 'crypto':
@@ -234,7 +234,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         # Fetch live price
-        current_price, _, _ = get_price(t['symbol'])
+        current_price, _, _ = get_price(t['symbol'], is_manual=True)
         ptype = "🟢 LONG" if t['is_long'] else "🔴 SHORT"
         
         # Pip calculation logic
@@ -304,7 +304,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if t.get('status', 'active') == 'pending':
                 await query.edit_message_text(text=f"🗑️ **Pending Limit Trade #{trade_id}** canceled.", parse_mode='Markdown')
             else:
-                current_price, _, _ = get_price(t['symbol'])
+                current_price, _, _ = get_price(t['symbol'], is_manual=True)
                 if current_price and not t.get('history_logged'):
                     pnl_raw = current_price - t['entry_price'] if t['is_long'] else t['entry_price'] - current_price
                     pip_size = get_pip_size(t['symbol'], current_price)
@@ -328,7 +328,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             price1 = float(parts[2])
             
             await query.edit_message_text(text="⏳ Fetching live price...")
-            current_price, _, resolved_symbol = get_price(symbol)
+            current_price, _, resolved_symbol = get_price(symbol, is_manual=True)
             if current_price is None:
                 await query.edit_message_text(text=f"❌ Could not fetch live price for {symbol}.")
                 return
@@ -406,7 +406,7 @@ async def forex_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         symbol = base_symbol
         
-    price = get_forex_price(symbol)
+    price = get_forex_price(symbol, is_manual=True)
     if price is not None:
         display = symbol.replace("=X", "")
         if len(display) == 6:
@@ -487,7 +487,7 @@ async def setforex_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         symbol = base_symbol
         
-    current_price = get_forex_price(symbol)
+    current_price = get_forex_price(symbol, is_manual=True)
     
     if current_price is None:
         await update.message.reply_text(f"❌ Could not fetch initial price for {symbol}.")
@@ -505,7 +505,7 @@ async def setforex_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def gold_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     symbol = "XAUUSD=X"
-    price = get_forex_price(symbol)
+    price = get_forex_price(symbol, is_manual=True)
     if price is not None:
         pivots = get_pivot_points(symbol, is_crypto=False, is_gold=True)
         pivot_txt = ""
@@ -528,7 +528,7 @@ async def setgold_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     reason = " ".join(context.args[1:]) if len(context.args) > 1 else ""
     symbol = "XAUUSD=X"
-    current_price = get_forex_price(symbol)
+    current_price = get_forex_price(symbol, is_manual=True)
     
     if current_price is None:
         await update.message.reply_text(f"❌ Could not fetch initial price for Gold.")
@@ -675,7 +675,7 @@ async def tracktrade_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text("❌ Entry price and stop loss cannot be the same.")
         return
         
-    current_price, _, resolved_symbol = get_price(symbol)
+    current_price, _, resolved_symbol = get_price(symbol, is_manual=True)
     if current_price is None:
         await update.message.reply_text(f"❌ Could not fetch price for {symbol}. Make sure it is a valid crypto or forex ticker.")
         return
@@ -797,7 +797,7 @@ async def limitentry_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text("❌ Entry price and stop loss cannot be the same.")
         return
         
-    current_price, _, resolved_symbol = get_price(symbol)
+    current_price, _, resolved_symbol = get_price(symbol, is_manual=True)
     if current_price is None:
         await update.message.reply_text(f"❌ Could not fetch price for {symbol}. Make sure it is a valid crypto or forex ticker.")
         return
@@ -885,7 +885,7 @@ async def deletetrade_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         if t.get('status', 'active') == 'pending':
             await update.message.reply_text(f"🗑️ **Pending Limit Trade #{trade_id}** canceled.", parse_mode='Markdown')
         else:
-            current_price, _, _ = get_price(t['symbol'])
+            current_price, _, _ = get_price(t['symbol'], is_manual=True)
             if current_price:
                 pnl_raw = current_price - t['entry_price'] if t['is_long'] else t['entry_price'] - current_price
                 pip_size = get_pip_size(t['symbol'], current_price)

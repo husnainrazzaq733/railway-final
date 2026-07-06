@@ -60,13 +60,13 @@ def get_spot_price(symbol):
         print(f"Error fetching spot price for {symbol}: {e}")
     return None
 
-def get_forex_price(symbol):
+def get_forex_price(symbol, is_manual=False):
     """
     Fetch forex price from yfinance.
     Ensure symbol has =X at the end, e.g., EURUSD=X.
     """
-    # For Gold specifically, prioritize GoldAPI and TradingView before falling back to yfinance
-    if symbol in ['XAUUSD=X', 'GC=F', 'GOLD']:
+    # For manual Gold checks, prioritize GoldAPI and TradingView
+    if is_manual and symbol in ['XAUUSD=X', 'GC=F', 'GOLD']:
         try:
             if GOLDAPI_KEY:
                 url = "https://www.goldapi.io/api/XAU/USD"
@@ -136,7 +136,7 @@ def get_forex_price(symbol):
 
     return None
 
-def get_price(symbol):
+def get_price(symbol, is_manual=False):
     """
     Attempt to fetch price as crypto. If that fails, attempt as forex.
     """
@@ -144,7 +144,7 @@ def get_price(symbol):
     
     if symbol_clean in ['GOLD', 'XAUUSD', 'XAU', 'GCF', 'GC=F']:
         # Fetch actual Spot Gold via YFinance (matches MT5)
-        price = get_forex_price('XAUUSD=X')
+        price = get_forex_price('XAUUSD=X', is_manual)
         if price is not None:
             return price, 'forex', 'GOLD'
             
@@ -178,13 +178,13 @@ def get_price(symbol):
     else:
         yf_symbol = symbol_clean
         
-    price = get_forex_price(yf_symbol)
+    price = get_forex_price(yf_symbol, is_manual)
     if price is not None:
         return price, 'forex', yf_symbol
         
     # If the default =X failed, also try the exact given symbol just in case
     if "=" not in symbol_clean:
-        price = get_forex_price(symbol_clean)
+        price = get_forex_price(symbol_clean, is_manual)
         if price is not None:
             return price, 'forex', symbol_clean
 
