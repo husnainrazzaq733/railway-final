@@ -1098,12 +1098,12 @@ async def users_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text, parse_mode='Markdown')
 
 async def session_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    from session_engine import SESSIONS, get_pkt_now, get_all_active_sessions
-    now = get_pkt_now()
+    from session_engine import SESSIONS, get_ny_now, get_all_active_sessions
+    now = get_ny_now()
     active = get_all_active_sessions()
     
     text = f"🌍 **GLOBAL FOREX SESSIONS** 🌍\n"
-    text += f"⏰ *Current Time:* {now.strftime('%I:%M %p')} (PKT)\n\n"
+    text += f"⏰ *Current Time:* {now.strftime('%I:%M %p')} (NY Time)\n\n"
     
     for name, s in SESSIONS.items():
         if name in active:
@@ -1113,7 +1113,7 @@ async def session_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
         start_str = f"{s['start']:02d}:00" if s['start'] >= 10 else f"0{s['start']}:00"
         end_str = f"{s['end']:02d}:00" if s['end'] >= 10 else f"0{s['end']}:00"
-        text += f"{s['emoji']} **{name}**: {status}\n  └ _Hours:_ {start_str} - {end_str} PKT\n\n"
+        text += f"{s['emoji']} **{name}**: {status}\n  └ _Hours:_ {start_str} - {end_str} NY Time\n\n"
         
     await update.message.reply_text(text, parse_mode='Markdown')
 

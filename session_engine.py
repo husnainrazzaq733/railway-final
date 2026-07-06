@@ -4,19 +4,19 @@ import os
 
 SESSION_STATE_FILE = "session_state.json"
 
-# Pakistan Standard Time (UTC+5) Summer Hours for Forex Sessions:
+# New York Time (UTC-4) Hours for Forex Sessions:
 SESSIONS = {
-    "Sydney": {"start": 2, "end": 11, "emoji": "🦘"},
-    "Asia": {"start": 4, "end": 13, "emoji": "🗼"},
-    "London": {"start": 12, "end": 21, "emoji": "🕰️"},
-    "New York": {"start": 17, "end": 2, "emoji": "🗽"}  # 17:00 to 02:00 next day
+    "Asia": {"start": 20, "end": 0, "emoji": "🇯🇵"},
+    "London": {"start": 2, "end": 5, "emoji": "🇬🇧"},
+    "New York": {"start": 7, "end": 10, "emoji": "🇺🇸"},
+    "London Close": {"start": 10, "end": 12, "emoji": "🇬🇧"}
 }
 
-def get_pkt_now():
-    return datetime.datetime.utcnow() + datetime.timedelta(hours=5)
+def get_ny_now():
+    return datetime.datetime.utcnow() - datetime.timedelta(hours=4)
 
 def is_session_active(session_name):
-    now = get_pkt_now()
+    now = get_ny_now()
     hour = now.hour
     
     session = SESSIONS[session_name]
@@ -27,7 +27,7 @@ def is_session_active(session_name):
     if start < end:
         return start <= hour < end
     else:
-        # If the session crosses midnight (e.g., New York 17:00 to 02:00)
+        # If the session crosses midnight (e.g., Asia 20:00 to 00:00)
         return hour >= start or hour < end
 
 def get_all_active_sessions():
@@ -62,7 +62,7 @@ def check_for_state_changes():
     has_changes = False
     
     # Do not alert on weekend closures/opens typically, but let's check day of week
-    now = get_pkt_now()
+    now = get_ny_now()
     # Let's say we still alert, but Forex is closed on weekends.
     # We will just do strictly time-based alerts.
     
