@@ -65,30 +65,7 @@ def get_forex_price(symbol):
     Fetch forex price from yfinance.
     Ensure symbol has =X at the end, e.g., EURUSD=X.
     """
-    try:
-        ticker = yf.Ticker(symbol)
-        # fast_info is efficient for current price
-        price = ticker.fast_info.last_price
-        return float(price)
-    except Exception as e:
-        print(f"Error fetching forex price via yfinance for {symbol}: {e}")
-        
-    # Fallback 1: Raw Yahoo Finance API
-    try:
-        url = f"https://query2.finance.yahoo.com/v8/finance/chart/{symbol}"
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-        }
-        response = requests.get(url, headers=headers, timeout=10)
-        if response.status_code == 200:
-            data = response.json()
-            if data.get('chart', {}).get('result'):
-                price = data['chart']['result'][0]['meta']['regularMarketPrice']
-                return float(price)
-    except Exception as e:
-        print(f"Error fetching forex price via Yahoo API for {symbol}: {e}")
-
-    # Fallback 2: For Gold specifically, use GoldAPI to get exact MT5 Spot Gold
+    # For Gold specifically, prioritize GoldAPI and TradingView before falling back to yfinance
     if symbol in ['XAUUSD=X', 'GC=F', 'GOLD']:
         try:
             if GOLDAPI_KEY:
@@ -102,7 +79,6 @@ def get_forex_price(symbol):
         except Exception as e:
             print(f"Error fetching Gold via GoldAPI for {symbol}: {e}")
             
-        # Fallback 3: TradingView Scanner for EXACT OANDA Spot Gold (Resolves $30 difference from Futures)
         try:
             url = "https://scanner.tradingview.com/cfd/scan"
             payload = {
@@ -118,9 +94,33 @@ def get_forex_price(symbol):
         except Exception as e:
             print(f"Error fetching TradingView Spot Gold for {symbol}: {e}")
 
-        # Fallback 4: Yahoo GC=F (Futures) or Binance PAXGUSDT if all else fails
+    # General YFinance attempt for all forex pairs (and fallback for Gold)
+    try:
+        ticker = yf.Ticker(symbol)
+        # fast_info is efficient for current price
+        price = ticker.fast_info.last_price
+        return float(price)
+    except Exception as e:
+        print(f"Error fetching forex price via yfinance for {symbol}: {e}")
+        
+    # Fallback: Raw Yahoo Finance API
+    try:
+        url = f"https://query2.finance.yahoo.com/v8/finance/chart/{symbol}"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        }
+        response = requests.get(url, headers=headers, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            if data.get('chart', {}).get('result'):
+                price = data['chart']['result'][0]['meta']['regularMarketPrice']
+                return float(price)
+    except Exception as e:
+        print(f"Error fetching forex price via Yahoo API for {symbol}: {e}")
+
+    # Final fallback for Gold (Yahoo Futures)
+    if symbol in ['XAUUSD=X', 'GC=F', 'GOLD']:
         try:
-            # Let's try to get GC=F (Gold Futures) as a reliable last resort
             url = "https://query2.finance.yahoo.com/v8/finance/chart/GC=F"
             headers = {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
