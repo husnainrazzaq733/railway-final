@@ -1291,8 +1291,8 @@ def setup_bot():
     application.add_handler(CallbackQueryHandler(button_handler))
     
     job_queue = application.job_queue
-    job_queue.run_repeating(check_alerts, interval=20, first=10)
-    job_queue.run_repeating(check_active_trades, interval=20, first=15)
+    job_queue.run_repeating(check_alerts, interval=10, first=10)
+    job_queue.run_repeating(check_active_trades, interval=10, first=15)
     job_queue.run_repeating(notify_sessions, interval=60, first=5)
     job_queue.run_repeating(check_news_alerts, interval=900, first=20)
     job_queue.run_repeating(check_live_news_alerts, interval=60, first=30)
