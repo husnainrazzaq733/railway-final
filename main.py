@@ -437,8 +437,8 @@ async def setspot_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     condition = 'above' if target_price > current_price else 'below'
     user_name = update.effective_user.first_name
-    add_alert(update.message.chat_id, user_name, symbol, target_price, condition, reason)
-    reason_txt = f"\n\n━━━━━━━━━━━━━━━━━━\n📌 **REASON FOR ALERT:**\n**{reason}**\n━━━━━━━━━━━━━━━━━━" if reason else ""
+    add_alert(update.message.chat_id, user_name, symbol, target_price, condition, reason, market_type='spot')
+    reason_txt = f"\n\n━━━━━━━━━━━━━━━━━━\n📌 *REASON FOR ALERT:*\n*{reason}*\n━━━━━━━━━━━━━━━━━━" if reason else ""
     await update.message.reply_text(f"✅ Spot Alert set by **{user_name}**! I will notify when `{symbol}` (Spot) goes **{condition.upper()}** {target_price}.{reason_txt}\n\n(Current price is {current_price})\n⏰ Time: {get_current_time_str()}", parse_mode='Markdown')
 
 async def setswap_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -463,8 +463,8 @@ async def setswap_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     condition = 'above' if target_price > current_price else 'below'
     user_name = update.effective_user.first_name
-    add_alert(update.message.chat_id, user_name, symbol, target_price, condition, reason)
-    reason_txt = f"\n\n━━━━━━━━━━━━━━━━━━\n📌 **REASON FOR ALERT:**\n**{reason}**\n━━━━━━━━━━━━━━━━━━" if reason else ""
+    add_alert(update.message.chat_id, user_name, symbol, target_price, condition, reason, market_type='swap')
+    reason_txt = f"\n\n━━━━━━━━━━━━━━━━━━\n📌 *REASON FOR ALERT:*\n*{reason}*\n━━━━━━━━━━━━━━━━━━" if reason else ""
     await update.message.reply_text(f"✅ Swap Alert set by **{user_name}**! I will notify when `{symbol}` (Swap) goes **{condition.upper()}** {target_price}.{reason_txt}\n\n(Current price is {current_price})\n⏰ Time: {get_current_time_str()}", parse_mode='Markdown')
 
 async def setforex_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -499,8 +499,8 @@ async def setforex_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         display = display[:3] + "/" + display[3:]
         
     user_name = update.effective_user.first_name
-    add_alert(update.message.chat_id, user_name, symbol, target_price, condition, reason)
-    reason_txt = f"\n\n━━━━━━━━━━━━━━━━━━\n📌 **REASON FOR ALERT:**\n**{reason}**\n━━━━━━━━━━━━━━━━━━" if reason else ""
+    add_alert(update.message.chat_id, user_name, symbol, target_price, condition, reason, market_type='forex')
+    reason_txt = f"\n\n━━━━━━━━━━━━━━━━━━\n📌 *REASON FOR ALERT:*\n*{reason}*\n━━━━━━━━━━━━━━━━━━" if reason else ""
     await update.message.reply_text(f"✅ Forex Alert set by **{user_name}**! I will notify when `{display}` goes **{condition.upper()}** {target_price}.{reason_txt}\n\n(Current price is {current_price})\n⏰ Time: {get_current_time_str()}", parse_mode='Markdown')
 
 async def gold_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -539,8 +539,8 @@ async def setgold_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     display_symbol = "Gold" 
     # But in alerts.json we must save GC=F so the engine can check it
     user_name = update.effective_user.first_name
-    add_alert(update.message.chat_id, user_name, symbol, target_price, condition, reason)
-    reason_txt = f"\n\n━━━━━━━━━━━━━━━━━━\n📌 **REASON FOR ALERT:**\n`{reason}`\n━━━━━━━━━━━━━━━━━━" if reason else ""
+    add_alert(update.message.chat_id, user_name, symbol, target_price, condition, reason, market_type='gold')
+    reason_txt = f"\n\n━━━━━━━━━━━━━━━━━━\n📌 *REASON FOR ALERT:*\n*{reason}*\n━━━━━━━━━━━━━━━━━━" if reason else ""
     await update.message.reply_text(f"✅ Gold Alert set by **{user_name}**! I will notify when Gold goes **{condition.upper()}** {target_price}.{reason_txt}\n\n(Current price is {current_price})\n⏰ Time: {get_current_time_str()}", parse_mode='Markdown')
 
 async def rsi_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -600,7 +600,7 @@ async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     for a in alerts:
         a_user = a.get('user_name', 'Unknown')
-        reason_txt = f" | 📌 **{a.get('reason')}**" if a.get('reason') else ""
+        reason_txt = f" | 📌 *{a.get('reason')}*" if a.get('reason') else ""
         text += f"🔹 **ID: {a['id']}** | `{a['symbol']}` -> target **{a['target_price']}** (by {a_user}){reason_txt}\n"
     text += "\n_Use /deletealert <ID> to remove an alert._"
     await update.message.reply_text(text, parse_mode='Markdown')
@@ -628,7 +628,16 @@ async def deletealert_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 async def check_alerts(context: ContextTypes.DEFAULT_TYPE):
     alerts = load_alerts()
     for alert in alerts:
-        current_price, _, _ = get_price(alert['symbol'])
+        market_type = alert.get('market_type', 'generic')
+        if market_type == 'spot':
+            current_price = get_spot_price(alert['symbol'])
+        elif market_type == 'swap':
+            current_price = get_swap_price(alert['symbol'])
+        elif market_type == 'forex' or market_type == 'gold':
+            current_price = get_forex_price(alert['symbol'])
+        else:
+            current_price, _, _ = get_price(alert['symbol'])
+            
         if current_price is None:
             continue
             
@@ -649,7 +658,7 @@ async def check_alerts(context: ContextTypes.DEFAULT_TYPE):
             trigger_time = get_current_time_str()
             a_user = alert.get('user_name', 'Unknown')
             reason = alert.get('reason', '')
-            reason_txt = f"\n\n━━━━━━━━━━━━━━━━━━\n📌 **REASON FOR ALERT:**\n**{reason}**\n━━━━━━━━━━━━━━━━━━\n\n" if reason else "\n\n"
+            reason_txt = f"\n\n━━━━━━━━━━━━━━━━━━\n📌 *REASON FOR ALERT:*\n*{reason}*\n━━━━━━━━━━━━━━━━━━\n\n" if reason else "\n\n"
             
             message = f"🚨 {emoji} **PRICE ALERT!** {emoji} 🚨\n\n`{alert['symbol']}` price went **{text}** to **{current_price}**!{reason_txt}*(Alert set by: {a_user})*\n⏰ **Time:** {trigger_time}\n\n_Auto-deleting one-time alert (Target was {alert['target_price']})_"
             try:
@@ -899,7 +908,7 @@ async def deletetrade_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 async def check_active_trades(context: ContextTypes.DEFAULT_TYPE):
     trades = trade_engine.load_trades()
     for t in trades:
-        current_price, _, _ = get_price(t['symbol'])
+        current_price, _, _ = get_price(t['symbol'], is_manual=True)
         if current_price is None:
             continue
             
