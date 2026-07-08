@@ -65,20 +65,17 @@ def get_forex_price(symbol, is_manual=False):
     Fetch forex price from yfinance.
     Ensure symbol has =X at the end, e.g., EURUSD=X.
     """
-    # For manual Gold checks, prioritize GoldAPI and TradingView
-    if is_manual and symbol in ['XAUUSD=X', 'GC=F', 'GOLD']:
-        try:
-            if GOLDAPI_KEY:
-                url = "https://www.goldapi.io/api/XAU/USD"
-                headers = {"x-access-token": GOLDAPI_KEY, "Content-Type": "application/json"}
-                response = requests.get(url, headers=headers, timeout=10)
-                if response.status_code == 200:
-                    data = response.json()
-                    if 'price' in data:
-                        return float(data['price'])
-        except Exception as e:
-            print(f"Error fetching Gold via GoldAPI for {symbol}: {e}")
-            
+    # 1. Primary: YFinance (Fast, no API limits, matches MT5 Spot)
+    try:
+        ticker = yf.Ticker(symbol)
+        price = ticker.fast_info.last_price
+        if price:
+            return float(price)
+    except Exception as e:
+        pass
+        
+    # 2. Fallback for Gold: TradingView Scanner (OANDA Spot Gold)
+    if symbol in ['XAUUSD=X', 'GC=F', 'GOLD']:
         try:
             url = "https://scanner.tradingview.com/cfd/scan"
             payload = {
@@ -92,18 +89,9 @@ def get_forex_price(symbol, is_manual=False):
                     price = data['data'][0]['d'][0]
                     return float(price)
         except Exception as e:
-            print(f"Error fetching TradingView Spot Gold for {symbol}: {e}")
-
-    # General YFinance attempt for all forex pairs (and fallback for Gold)
-    try:
-        ticker = yf.Ticker(symbol)
-        # fast_info is efficient for current price
-        price = ticker.fast_info.last_price
-        return float(price)
-    except Exception as e:
-        print(f"Error fetching forex price via yfinance for {symbol}: {e}")
-        
-    # Fallback: Raw Yahoo Finance API
+            pass
+            
+    # 3. Fallback: Raw Yahoo Finance API
     try:
         url = f"https://query2.finance.yahoo.com/v8/finance/chart/{symbol}"
         headers = {
@@ -116,23 +104,7 @@ def get_forex_price(symbol, is_manual=False):
                 price = data['chart']['result'][0]['meta']['regularMarketPrice']
                 return float(price)
     except Exception as e:
-        print(f"Error fetching forex price via Yahoo API for {symbol}: {e}")
-
-    # Final fallback for Gold (Yahoo Futures)
-    if symbol in ['XAUUSD=X', 'GC=F', 'GOLD']:
-        try:
-            url = "https://query2.finance.yahoo.com/v8/finance/chart/GC=F"
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-            }
-            response = requests.get(url, headers=headers, timeout=10)
-            if response.status_code == 200:
-                data = response.json()
-                if data.get('chart', {}).get('result'):
-                    price = data['chart']['result'][0]['meta']['regularMarketPrice']
-                    return float(price)
-        except Exception as e:
-            print(f"Error fetching GC=F fallback for {symbol}: {e}")
+        pass
 
     return None
 
